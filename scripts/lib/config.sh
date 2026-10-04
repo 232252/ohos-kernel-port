@@ -58,7 +58,10 @@ OKCP_SYSTEM_TYPE="${OKCP_SYSTEM_TYPE:-standard}"
 OKCP_BOARD="${OKCP_BOARD:-}"
 
 #-------------------------------------------------------------------- arch
-config_arch() {
+# The canonical name is lane_arch, because build.sh and pack.sh call it that
+# way.  config_arch is kept as an alias so either spelling works; there is only
+# one implementation.
+lane_arch() {
     local lane=$1
     if [[ -n "${OKCP_ARCH:-}" ]]; then printf '%s\n' "${OKCP_ARCH}"; return 0; fi
     case "$(lane_repo "${lane}")" in
@@ -66,6 +69,7 @@ config_arch() {
         *) printf 'arm64\n' ;;
     esac
 }
+config_arch() { lane_arch "$1"; }
 
 #------------------------------------------------------- config repo access
 fetch_ohos_config_repo() {

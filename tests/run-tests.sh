@@ -422,6 +422,79 @@ else
 fi
 
 #==============================================================================
+section "cross-library contract"
+#==============================================================================
+
+# Subagents overwriting a library once left build.sh and pack.sh calling
+# lane_arch (renamed to config_arch) and ohos-kb calling a build_kernel
+# signature that no longer existed.  Neither file failed to parse, and the unit
+# tests could not see it: a call to a function that is gone, or to a function
+# whose parameters were reordered, is still valid bash.
+#
+# So the contract is declared explicitly.  If a function is renamed or its
+# signature changes, update this list — that is the point.
+
+# contract_name|file that owns it
+CONTRACT="
+lane_arch:config.sh
+config_arch:config.sh
+kernel_series:matrix.sh
+lane_resolve:matrix.sh
+lane_verify_kver_remote:ohos-kb
+build_kernel:build.sh
+build_modules:build.sh
+build_toolchain_summary:build.sh
+kbuild_args:build.sh
+setup_ccache:build.sh
+stamp_version:build.sh
+collect_patches:patch.sh
+apply_patches:patch.sh
+generate_config:config.sh
+config_is_full:config.sh
+fetch_kernel_source:fetch.sh
+ohos_mirrors_for:fetch.sh
+package_kernel:package.sh
+collect_kernel_headers:package.sh
+write_artifact_manifest:package.sh
+make_boot_img:pack.sh
+find_img_format:pack.sh
+toolchain_env:toolchain.sh
+host_toolchain_prefix:toolchain.sh
+tc_select:toolchain.sh
+fetch_toolchain:toolchain.sh
+git_do:common.sh
+http_get:common.sh
+retry:common.sh
+make_tmpdir:common.sh
+"
+
+missing_fn=0
+while IFS=: read -r fn owner; do
+    [[ -n "${fn}" ]] || continue
+    n=$(grep -lE "^${fn}\(\) *\{" "${ROOT}"/scripts/lib/*.sh "${ROOT}/ohos-kb" 2>/dev/null | wc -l)
+    if [[ "${n}" == "0" ]]; then
+        printf '  \033[0;31mFAIL\033[0m %s is called but defined nowhere (expected in %s)\n' "${fn}" "${owner}"
+        missing_fn=$((missing_fn+1))
+    elif [[ "${n}" -gt 1 ]]; then
+        printf '  \033[0;31mFAIL\033[0m %s is defined %s times\n' "${fn}" "${n}"
+        missing_fn=$((missing_fn+1))
+    fi
+done <<< "${CONTRACT}"
+assert_eq "every contracted function is defined exactly once" "0" "${missing_fn}"
+
+# build_kernel is called from ohos-kb; assert the call passes an output
+# directory, not a target list.  build.sh builds Image and dtbs itself and
+# takes <lane> <srcdir> <outdir>.
+sig=$(sed -n '/^build_kernel() {/,+2p' "${ROOT}/scripts/lib/build.sh" | tr '\n' ' ')
+assert_contains "build_kernel takes (lane, srcdir, outdir)" "${sig}" "outdir"
+if grep -q 'build_kernel "${LANE}" "${sd}" "${OPT_TARGETS' "${ROOT}/ohos-kb"; then
+    FAIL=$((FAIL+1)); FAILURES+=("ohos-kb calls build_kernel with the old argument order")
+    printf '  \033[0;31mFAIL\033[0m ohos-kb calls build_kernel with the old argument order\n'
+else
+    PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   ohos-kb calls build_kernel with the current argument order\n'
+fi
+
+#==============================================================================
 section "version → path derivation"
 #==============================================================================
 

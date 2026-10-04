@@ -160,3 +160,31 @@ build_modules() {
         || { log_error "module build failed; see ${outdir}/build.log"; return 1; }
     log_ok "modules built"
 }
+
+# Append a LOCALVERSION suffix and re-derive the configuration.
+#
+# Opt-in only.  OpenHarmony does not select kernels by version string, so an
+# injected suffix is a gratuitous difference from the release a lane tracks.
+# Usage: stamp_version <srcdir> <suffix> [arch]
+stamp_version() {
+    local srcdir=$1 suffix=$2 arch=${3:-}
+    if [[ -z "${suffix}" ]]; then
+        log_debug "no version suffix requested"
+        return 0
+    fi
+    [[ -n "${arch}" ]] || arch=$(lane_arch "${LANE:-primary}")
+    log_step "stamping the kernel version with '${suffix}'"
+    printf '\nCONFIG_LOCALVERSION="%s"\n' "${suffix}" >> "${srcdir}/.config"
+    ( cd "${srcdir}" && make -s ARCH="${arch}" olddefconfig ) >/dev/null 2>&1 \
+        || log_warn "olddefconfig after stamping exited non-zero (continuing)"
+    local v
+    v=$( cd "${srcdir}" && make -s ARCH="${arch}" kernelversion 2>/dev/null || echo '?' )
+    log_ok "kernel version is now: ${v}"
+}
+
+# The toolchain variables the CLI must set before build_kernel, and the
+# compiler we will actually use, for reporting.
+build_toolchain_summary() {
+    printf 'CROSS_COMPILE=%s\n' "${OKCP_CROSS_COMPILE:-<native>}"
+    printf 'CC=%s\n'           "${OKCP_CLANG:-aarch64 gcc via ${OKCP_CROSS_COMPILE:-host}}"
+}

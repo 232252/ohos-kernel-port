@@ -73,7 +73,9 @@ BUILD OPTIONS
     --board NAME          OpenHarmony board layer (e.g. rk3568, qemu)
     --type standard|small OpenHarmony system type       [standard]
     --arch arm64|arm      target architecture            [auto]
-    --cc auto|clang|gcc   toolchain                     [auto]
+    --toolchain host|ID    cross compiler: a host install, or an id from
+                          data/toolchains.tsv              [host]
+    --cc <alias>           deprecated alias for --toolchain
     --packager ohos|standalone                            [standalone]
     --targets "Image dtbs modules"                        [default set]
     --sign SUFFIX         append a LOCALVERSION suffix   [off]
@@ -274,10 +276,37 @@ cmd_fetch()   { set_lane "${1:-${OPT_LANE_ARG:-primary}}"; fetch_kernel_source "
 cmd_config()  { set_lane "${1:-${OPT_LANE_ARG:-primary}}"; local sd; sd=$(lane_srcdir)
                  require_file "${sd}/Makefile" || die "run 'ohos-kb fetch ${LANE}' first"
                  generate_config "${LANE}" "${sd}" "${sd}" >/dev/null; }
+# Resolve the toolchain into the environment variables kbuild_args consumes,
+# before any make runs.  A toolchain id from data/toolchains.tsv downloads and
+# unpacks; "host" uses the aarch64 cross compiler already installed.
+setup_build_toolchain() {
+    local tc=${1:-${OKCP_TOOLCHAIN:-host}}
+    if [[ "${tc}" == "host" ]]; then
+        if ! host_toolchain_prefix >/dev/null 2>&1; then
+            log_warn "no aarch64 cross compiler found on PATH."
+            log_warn "  install one:      sudo apt-get install -y gcc-aarch64-linux-gnu"
+            log_warn "  or name a table entry: ohos-kb build ${LANE} --toolchain $(tc_ids | head -1)"
+            return 0
+        fi
+        export OKCP_CROSS_COMPILE
+        OKCP_CROSS_COMPILE=$(host_toolchain_prefix)
+        log_ok "toolchain: ${OKCP_CROSS_COMPILE}gcc (host)"
+        return 0
+    fi
+    local -a envlines
+    mapfile -t envlines < <(toolchain_env "${tc}")
+    local l
+    for l in "${envlines[@]}"; do
+        export "${l?}"
+    done
+    log_ok "toolchain: ${OKCP_CROSS_COMPILE}gcc from ${OKCP_TOOLCHAIN_PREFIX}"
+}
+
 cmd_build()   { set_lane "${1:-${OPT_LANE_ARG:-primary}}"; local sd; sd=$(lane_srcdir)
                  require_file "${sd}/.config" || die "run 'ohos-kb config ${LANE}' first"
-                 [[ -n "${OPT_SIGN}" ]] && stamp_version "${sd}" "${OPT_SIGN}"
-                 build_kernel "${LANE}" "${sd}" "${OPT_TARGETS:-${OKCP_TARGETS_DEFAULT}}" >/dev/null; }
+                 setup_build_toolchain
+                 if [[ -n "${OPT_SIGN}" ]]; then stamp_version "${sd}" "${OPT_SIGN}" "$(lane_arch "${LANE}")"; fi
+                 build_kernel "${LANE}" "${sd}" "${OKCP_OUT_ROOT}/${LANE}" >/dev/null; }
 cmd_package() { set_lane "${1:-${OPT_LANE_ARG:-primary}}"; local sd; sd=$(lane_srcdir)
                  require_file "${sd}/Makefile" || die "run 'ohos-kb fetch ${LANE}' first"
                  package_kernel "${LANE}" "${sd}" "${OPT_OUT:-${OKCP_ARTIFACT_DIR}/${LANE}}" >/dev/null; }
@@ -312,7 +341,8 @@ main() {
             --board)       OKCP_BOARD=${2:-}; export OKCP_BOARD; shift 2 ;;
             --type)        OKCP_SYSTEM_TYPE=${2:-standard}; export OKCP_SYSTEM_TYPE; shift 2 ;;
             --arch)        OKCP_ARCH=${2:-}; export OKCP_ARCH; shift 2 ;;
-            --cc)          OKCP_CC=${2:-auto}; export OKCP_CC; shift 2 ;;
+            --cc)          OKCP_TOOLCHAIN=${2:-host}; export OKCP_TOOLCHAIN; shift 2 ;;
+            --toolchain)   OKCP_TOOLCHAIN=${2:-host}; export OKCP_TOOLCHAIN; shift 2 ;;
             --packager)    OKCP_PACKAGER=${2:-standalone}; export OKCP_PACKAGER; shift 2 ;;
             --ids)         ids_only=1; shift ;;
             --status)      list_status=${2:-}; shift 2 ;;
