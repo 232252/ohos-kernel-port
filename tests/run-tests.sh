@@ -382,16 +382,26 @@ config_probe() {  # <label> <lane> <expected-lines|-> [ENV=VAL ...]
         cp "${REAL_MERGE}" "${work}/kernel/scripts/kconfig/merge_config.sh"
         chmod +x "${work}/kernel/scripts/kconfig/merge_config.sh"
     fi
+    # A separate kbuild directory, like the real pipeline: the bug this
+    # section exists to prevent was configuring in-tree and then building
+    # out-of-tree, which kbuild rejects as a dirty source tree.
+    mkdir -p "${work}/kbuild"
     (
         export OKCP_WORKDIR="${OKCP_WORKDIR:-${work}/build}"
         export "$@"
-        generate_config "${lane}" "${work}/kernel" "${work}/kernel" >/dev/null 2>&1
+        generate_config "${lane}" "${work}/kernel" "${work}/kbuild" >/dev/null 2>&1
     ) || {
         printf '  \033[0;31mFAIL\033[0m %s: generate_config exited non-zero\n' "${label}"
         FAIL=$((FAIL+1)); FAILURES+=("${label}: generate_config failed"); CFG_OK=0
         rm -rf "${work}"; return
     }
-    local n; n=$(wc -l < "${work}/kernel/.config" 2>/dev/null || echo 0)
+    local n; n=$(wc -l < "${work}/kbuild/.config" 2>/dev/null || echo 0)
+    # The source tree must not have been written to.
+    if [[ -e "${work}/kernel/.config" || -d "${work}/kernel/include/config" ]]; then
+        FAIL=$((FAIL+1)); FAILURES+=("${label}: the source tree was modified")
+        printf '  \033[0;31mFAIL\033[0m %s: the source tree was modified\n' "${label}"
+        rm -rf "${work}"; return
+    fi
     if [[ "${want}" == "-" || "${n}" == "${want}" ]]; then
         PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   %s (%s lines)\n' "${label}" "${n}"
     else
@@ -439,6 +449,7 @@ CONTRACT="
 lane_arch:config.sh
 config_arch:config.sh
 kernel_series:matrix.sh
+lane_outdir:matrix.sh
 lane_resolve:matrix.sh
 lane_verify_kver_remote:ohos-kb
 build_kernel:build.sh
@@ -487,6 +498,14 @@ assert_eq "every contracted function is defined exactly once" "0" "${missing_fn}
 # takes <lane> <srcdir> <outdir>.
 sig=$(sed -n '/^build_kernel() {/,+2p' "${ROOT}/scripts/lib/build.sh" | tr '\n' ' ')
 assert_contains "build_kernel takes (lane, srcdir, outdir)" "${sig}" "outdir"
+# The configuration and the compile must target the same kbuild directory.
+if grep -q 'generate_config "${LANE}" "${sd}" "${sd}"' "${ROOT}/ohos-kb"; then
+    FAIL=$((FAIL+1)); FAILURES+=("ohos-kb configures in-tree but builds out-of-tree")
+    printf '  \033[0;31mFAIL\033[0m ohos-kb configures in-tree but builds out-of-tree\n'
+else
+    PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   config and build share one kbuild directory\n'
+fi
+
 if grep -q 'build_kernel "${LANE}" "${sd}" "${OPT_TARGETS' "${ROOT}/ohos-kb"; then
     FAIL=$((FAIL+1)); FAILURES+=("ohos-kb calls build_kernel with the old argument order")
     printf '  \033[0;31mFAIL\033[0m ohos-kb calls build_kernel with the old argument order\n'

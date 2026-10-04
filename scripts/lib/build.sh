@@ -24,7 +24,9 @@ _OKCP_BUILD_SH=1
 # shellcheck source=./config.sh
 [[ -z "${_OKCP_CONFIG_SH:-}" ]] && source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/config.sh"
 
-OKCP_OUT_ROOT="${OKCP_OUT_ROOT:-${OKCP_ROOT}/build/out}"
+# Follow OKCP_WORKDIR so a CI run that mounted a large volume actually
+# uses it; a 6.6 arm64 build does not fit in a hosted runner's workspace.
+OKCP_OUT_ROOT="${OKCP_OUT_ROOT:-${OKCP_WORKDIR:-${OKCP_ROOT}/build}/out}"
 OKCP_CCACHE_DIR="${OKCP_CCACHE_DIR:-${OKCP_ROOT}/build/ccache}"
 
 # Assemble the kbuild arguments shared by every make call in a lane.
@@ -91,7 +93,7 @@ EOF
 # bootloader passes the device tree, and refusing to produce an Image over it
 # would be wrong.
 build_kernel() {
-    local lane=$1 srcdir=$2 outdir=$3
+    local lane=$1 srcdir=$2 outdir=${3:-$(lane_outdir "${lane}")}
     local arch
     arch=$(lane_arch "${lane}")
     mkdir -p "${outdir}"

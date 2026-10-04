@@ -77,6 +77,18 @@ kernel_series() {
     printf '%s\n' "${series}"
 }
 
+# The out-of-tree kbuild directory for a lane.
+#
+# One definition on purpose.  The configuration step and the compile step must
+# agree on it: if the configuration is written in-tree and the build is
+# out-of-tree, kbuild refuses the second run with "The source tree is not
+# clean".  It also has to follow OKCP_WORKDIR, because CI mounts a much larger
+# volume there than in the workspace.
+lane_outdir() {
+    local lane=$1
+    printf '%s\n' "${OKCP_OUT_ROOT:-${OKCP_WORKDIR:-${OKCP_ROOT}/build}/out}/${lane}"
+}
+
 # All lane ids, in matrix order.
 lane_ids() {
     awk -F'\t' '/^#/ { next } NF >= 8 { print $1 }' "${OKCP_LANES_FILE}"

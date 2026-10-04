@@ -36,7 +36,13 @@
 #   4. configs/base/<arch>/*.config                            (this repo)
 #   5. configs/lanes/<overlay>/*.config                         (this repo)
 #   6. --config PATH (adhoc, not persisted)
-#   7. make olddefconfig                                        (re-derive)
+#   7. make O=<kdir> olddefconfig                              (re-derive)
+#
+# The configuration MUST be produced in the same out-of-tree kbuild directory
+# the compile step uses.  Writing .config into the source tree and running an
+# in-tree olddefconfig leaves include/config and friends behind, and the next
+# out-of-tree build then refuses with
+#   *** The source tree is not clean, please run 'make ARCH=arm64 mrproper' 
 #=======================================================================
 
 [[ -n "${_OKCP_CONFIG_SH:-}" ]] && return 0
@@ -170,9 +176,13 @@ _merge_fragments() {
 }
 
 #--------------------------------------------------------------- entry
-# generate_config <lane> <srcdir> [outdir]
+# generate_config <lane> <srcdir> [kbuild_dir]
+#
+# Everything lands in <kbuild_dir>, which must be the same directory the later
+# compile uses (see lane_outdir).  The source tree is left untouched: it stays
+# pristinely rebuildable, and a second run does not inherit stale objects.
 generate_config() {
-    local lane=$1 srcdir=$2 outdir=${3:-${srcdir}}
+    local lane=$1 srcdir=$2 outdir=${3:-$(lane_outdir "${lane}")}
     local out="${outdir}/.config" arch mode="fragment" base_desc=""
     local -a frags=()
 
@@ -287,9 +297,12 @@ generate_config() {
     fi
 
     #-- settle ------------------------------------------------------------
-    log_step "config: olddefconfig"
-    make -C "${srcdir}" -s ARCH="${arch}" olddefconfig >/dev/null 2>&1 \
-        || log_warn "olddefconfig exited non-zero (often benign; continuing)"
+    # O= must match the compile step, or kbuild later rejects the tree as dirty.
+    log_step "config: olddefconfig (O=${outdir#"${OKCP_ROOT}"/})"
+    if ! make -C "${srcdir}" -s O="${outdir}" ARCH="${arch}" olddefconfig > "${outdir}/olddefconfig.log" 2>&1; then
+        log_warn "olddefconfig exited non-zero; last lines of ${outdir#"${OKCP_ROOT}"/}/olddefconfig.log:"
+        tail -5 "${outdir}/olddefconfig.log" >&2 2>/dev/null || true
+    fi
     cp -f "${out}" "${outdir}/.okcp-resolved-config" 2>/dev/null || true
 
     log_ok "config ready: ${out#"${OKCP_ROOT}"/} ($(wc -l < "${out}") lines)"

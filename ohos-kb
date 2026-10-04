@@ -275,7 +275,7 @@ cmd_clean() {
 cmd_fetch()   { set_lane "${1:-${OPT_LANE_ARG:-primary}}"; fetch_kernel_source "${LANE}" >/dev/null; }
 cmd_config()  { set_lane "${1:-${OPT_LANE_ARG:-primary}}"; local sd; sd=$(lane_srcdir)
                  require_file "${sd}/Makefile" || die "run 'ohos-kb fetch ${LANE}' first"
-                 generate_config "${LANE}" "${sd}" "${sd}" >/dev/null; }
+                 generate_config "${LANE}" "${sd}" "$(lane_outdir "${LANE}")" >/dev/null; }
 # Resolve the toolchain into the environment variables kbuild_args consumes,
 # before any make runs.  A toolchain id from data/toolchains.tsv downloads and
 # unpacks; "host" uses the aarch64 cross compiler already installed.
@@ -329,7 +329,7 @@ cmd_build()   { set_lane "${1:-${OPT_LANE_ARG:-primary}}"; local sd; sd=$(lane_s
                  require_file "${sd}/.config" || die "run 'ohos-kb config ${LANE}' first"
                  setup_build_toolchain
                  if [[ -n "${OPT_SIGN}" ]]; then stamp_version "${sd}" "${OPT_SIGN}" "$(lane_arch "${LANE}")"; fi
-                 build_kernel "${LANE}" "${sd}" "${OKCP_OUT_ROOT}/${LANE}" >/dev/null; }
+                 build_kernel "${LANE}" "${sd}" "$(lane_outdir "${LANE}")" >/dev/null; }
 cmd_package() { set_lane "${1:-${OPT_LANE_ARG:-primary}}"; local sd; sd=$(lane_srcdir)
                  require_file "${sd}/Makefile" || die "run 'ohos-kb fetch ${LANE}' first"
                  package_kernel "${LANE}" "${sd}" "${OPT_OUT:-${OKCP_ARTIFACT_DIR}/${LANE}}" >/dev/null; }
