@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           lane='${{ inputs.lane }}'
           if [[ "$lane" == "all" || -z "$lane" ]]; then
-            lanes=$(./ohos-kb list-lanes | awk 'NR>1 && $1 ~ /^(ohos-|upstream-)/ {print $1}' | head -4)
+            lanes=$(./ohos-kb list-lanes --ids --status primary)
             inc=""
             for l in $lanes; do
               [[ -n "$inc" ]] && inc+=","
@@ -152,8 +152,13 @@ jobs:
             bc bison flex libssl-dev libelf-dev \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             ccache python3 rsync zip unzip xz-utils
-          sudo update-ccache symlinks
+          # `update-ccache symlinks` is absent on some runner images.  It only
+          # installs wrappers into /usr/lib/ccache, which ohos-kb does not use:
+          # toolchain.sh invokes ccache by name.  Install it when present, and
+          # do not fail the build when it is not.
+          command -v update-ccache >/dev/null 2>&1 && sudo update-ccache symlinks || true
           ccache -M 10G
+          ccache --version | head -1
 
       - name: Clear the compiler cache
         if: ${{ inputs.ccache_clear }}

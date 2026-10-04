@@ -102,7 +102,7 @@ jobs:
             bc bison flex libssl-dev libelf-dev \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             ccache python3 rsync zip unzip xz-utils
-          sudo update-ccache symlinks
+          command -v update-ccache >/dev/null 2>&1 && sudo update-ccache symlinks || true
           ccache -M 10G
 
       - name: Build

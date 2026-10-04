@@ -48,6 +48,7 @@ USAGE
 
 COMMANDS
     list-lanes [--status S]     show the lane matrix (the source of truth)
+    list-lanes --ids            print just the lane ids, one per line
     show <lane>                 show one lane's resolved build parameters
     verify [--lane L]           re-check every lane against its remote Makefile
     fetch  <lane>               download the kernel source tree
@@ -121,13 +122,11 @@ lane_srcdir() { printf '%s\n' "${OKCP_WORKDIR}/src/${LANE}"; }
 #------------------------------------------------------------ subcommands
 
 cmd_list_lanes() {
-    local status=""
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --status) status=${2:-}; shift 2 ;;
-            *) shift ;;
-        esac
-    done
+    local status="${list_status:-}" ids_only="${ids_only:-0}"
+    if [[ "${ids_only}" == "1" ]]; then
+        if [[ -n "${status}" ]]; then lane_ids_by_status "${status}"; else lane_ids; fi
+        return 0
+    fi
     lane_table "${status}"
     echo
     echo "Total: $(lane_ids | wc -l) lanes"
@@ -303,6 +302,10 @@ main() {
 
     # Pre-scan flags so that a lane can appear anywhere.
     local -a rest=()
+    # main pre-scans every option, so subcommand-specific flags must be
+    # registered here as well; cmd_list_lanes reads these, not its own copies.
+    local ids_only=0
+    local list_status=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --lane)        LANE=$(lane_resolve "${2:-primary}"); shift 2 ;;
@@ -311,6 +314,8 @@ main() {
             --arch)        OKCP_ARCH=${2:-}; export OKCP_ARCH; shift 2 ;;
             --cc)          OKCP_CC=${2:-auto}; export OKCP_CC; shift 2 ;;
             --packager)    OKCP_PACKAGER=${2:-standalone}; export OKCP_PACKAGER; shift 2 ;;
+            --ids)         ids_only=1; shift ;;
+            --status)      list_status=${2:-}; shift 2 ;;
             --targets)     OPT_TARGETS=${2:-}; shift 2 ;;
             --sign)        OPT_SIGN=${2:-}; shift 2 ;;
             --config)      OKCP_CONFIG_OVERRIDE=${2:-}; export OKCP_CONFIG_OVERRIDE; shift 2 ;;

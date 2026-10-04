@@ -221,6 +221,23 @@ assert_contains "show resolves the version"  "$("${ROOT}/ohos-kb" show primary 2
 assert_contains "doctor reports the lane count" "$("${ROOT}/ohos-kb" doctor 2>&1)" "lanes defined"
 assert_contains "version prints"              "$("${ROOT}/ohos-kb" version 2>&1)" "ohos-kb"
 
+# --ids and --status must be handled by the top-level pre-scan.  A subcommand
+# that declares its own `local` copy of a flag the pre-scan already consumed
+# silently ignores it, which is exactly the bug that made the CI matrix build
+# four arbitrary lanes instead of the primary ones.
+ids=$("${ROOT}/ohos-kb" list-lanes --ids 2>/dev/null)
+assert_eq "list-lanes --ids prints one lane per line" "$(lane_ids | wc -l)" "$(printf '%s\n' "${ids}" | wc -l)"
+prim=$("${ROOT}/ohos-kb" list-lanes --ids --status primary 2>/dev/null | tr '\n' ' ')
+assert_eq "list-lanes --ids --status primary lists the primary lanes" \
+          "$(lane_ids_by_status primary | tr '\n' ' ')" "${prim}"
+# and it must be parseable: no header, no padding
+if printf '%s\n' "${ids}" | grep -qE '^(LANE|[A-Za-z].*kver)'; then
+    FAIL=$((FAIL+1)); FAILURES+=("--ids output is not machine readable")
+    printf '  \033[0;31mFAIL\033[0m --ids output is not machine readable\n'
+else
+    PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   --ids output is machine readable\n'
+fi
+
 # Unknown commands and options must fail loudly, not silently do nothing.
 if "${ROOT}/ohos-kb" no-such-command >/dev/null 2>&1; then
     FAIL=$((FAIL+1)); FAILURES+=("unknown command should exit non-zero")
