@@ -294,6 +294,39 @@ for f in docs/VERSION-MATRIX.md docs/PORTING-NOTES.md docs/BOOT-IMAGE.md docs/CO
 done
 
 #==============================================================================
+section "regressions"
+#==============================================================================
+
+# An environment variable that is *set but empty* breaks git outright:
+#   fatal: unable to access '...': Problem with the SSL CA cert
+# This shipped as a CI failure: a workflow interpolated ${{ vars.GIT_SSL_CAINFO }}
+# into `env:`, and an unconfigured GitHub Actions variable yields "" rather than
+# leaving the variable absent.  Two guards: no workflow may declare it at the
+# env level, and git_do must ignore an empty value.
+bad_env=$(grep -rn "^ *GIT_SSL_CAINFO:" "${ROOT}/.github/workflows" 2>/dev/null | wc -l)
+assert_eq "no workflow sets GIT_SSL_CAINFO in env (empty breaks git)" "0" "${bad_env}"
+
+if GIT_SSL_CAINFO="" bash -c "source '${ROOT}/scripts/lib/common.sh' >/dev/null 2>&1; git_do --version" >/dev/null 2>&1; then
+    PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   git_do tolerates an empty GIT_SSL_CAINFO\n'
+else
+    FAIL=$((FAIL+1)); FAILURES+=("git_do fails when GIT_SSL_CAINFO is empty")
+    printf '  \033[0;31mFAIL\033[0m git_do fails when GIT_SSL_CAINFO is empty\n'
+fi
+
+# The same class of bug: a workflow must never build a kernel by trusting an
+# artefact label rather than the lane.  The release workflow cross-checks the
+# tag against the resolved kernel version.
+if [[ -f "${ROOT}/.github/workflows/release.yml" ]]; then
+    if grep -q "kver" "${ROOT}/.github/workflows/release.yml" && \
+       grep -q 'does not start with the lane' "${ROOT}/.github/workflows/release.yml"; then
+        PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   release cross-checks tag against the lane version\n'
+    else
+        FAIL=$((FAIL+1)); FAILURES+=("release.yml does not cross-check the tag against the lane version")
+        printf '  \033[0;31mFAIL\033[0m release.yml does not cross-check the tag\n'
+    fi
+fi
+
+#==============================================================================
 printf '\n\033[1m────────────────────────────────────────\033[0m\n'
 printf 'passed %d   failed %d   skipped %d\n' "${PASS}" "${FAIL}" "${SKIP}"
 if [[ ${FAIL} -gt 0 ]]; then

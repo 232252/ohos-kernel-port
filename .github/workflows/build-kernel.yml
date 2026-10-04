@@ -64,7 +64,6 @@ concurrency:
 
 env:
   TZ: Etc/UTC
-  GIT_SSL_CAINFO: ${{ vars.GIT_SSL_CAINFO }}
 
 jobs:
   verify-matrix:
@@ -108,6 +107,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Configure a custom CA bundle, if this repository defines one
+        # Some users sit behind a TLS-intercepting proxy.  Setting an *empty*
+        # GIT_SSL_CAINFO breaks every git operation, so this only ever writes a
+        # non-empty value.
+        if: ${{ vars.GIT_SSL_CAINFO != '' }}
+        run: |
+          echo "GIT_SSL_CAINFO=${{ vars.GIT_SSL_CAINFO }}" >> "$GITHUB_ENV"
+          git config --global http.sslCAInfo "${{ vars.GIT_SSL_CAINFO }}"
+          git ls-remote --exit-code https://github.com/${{ github.repository }} HEAD >/dev/null \
+            && echo "custom CA bundle works"
 
       - name: Free disk space
         run: |

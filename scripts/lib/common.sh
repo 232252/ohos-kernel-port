@@ -133,6 +133,13 @@ git_env() {
 }
 
 # Run git honouring GIT_SSL_CAINFO without leaking it into every call site.
+#
+# The -n test is load-bearing.  An environment variable that is *set but
+# empty* is worse than one that is unset: git reports
+#   fatal: unable to access '...': Problem with the SSL CA cert (path? access rights?)
+# and every clone fails.  This bites when a CI workflow interpolates an
+# unconfigured `${{ vars.SOMETHING }}` into `env:`, which yields an empty
+# string rather than leaving the variable absent.
 git_do() {
     if [[ -n "${GIT_SSL_CAINFO:-}" ]]; then
         git -c http.sslCAInfo="${GIT_SSL_CAINFO}" "$@"
