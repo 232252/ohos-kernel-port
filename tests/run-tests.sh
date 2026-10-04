@@ -558,6 +558,76 @@ else
 fi
 
 #==============================================================================
+section "patch files"
+#==============================================================================
+
+# Hand-writing a unified diff is error-prone in a way that is easy to get
+# wrong three times in a row: the hunk header declares how many old and new
+# lines follow, and if the body disagrees git reports "corrupt patch" at some
+# later line.  It cannot be caught by `bash -n`, and it is only caught by
+# `git am` at build time.  So check the arithmetic here.
+patch_bad=0
+check_patch() {
+    local f=$1
+    local -a hdr_old hdr_new
+    local old_decl="" new_decl="" hunk_line=0 body_old=0 body_new=0
+    local lineno=0
+    while IFS= read -r line; do
+        lineno=$((lineno+1))
+        if [[ "${line}" =~ ^@@\ -([0-9]+)(,([0-9]+))?\ \+([0-9]+)(,([0-9]+))?\ @@ ]]; then
+            if [[ -n "${old_decl}" ]]; then
+                if [[ "${body_old}" != "${old_decl}" || "${body_new}" != "${new_decl}" ]]; then
+                    printf '  %s:%s hunk declares -%s +%s but body has -%s +%s\n' \
+                        "$(basename "$f")" "$hunk_line" "${old_decl}" "${new_decl}" "${body_old}" "${body_new}"
+                    patch_bad=$((patch_bad+1))
+                fi
+            fi
+            old_decl="${BASH_REMATCH[3]:-1}"
+            new_decl="${BASH_REMATCH[6]:-1}"
+            hunk_line=$lineno; body_old=0; body_new=0
+            continue
+        fi
+        if [[ -z "${old_decl}" ]]; then
+            continue
+        fi
+        case "${line}" in
+            '--- '*|'+++ '*) old_decl="" ;;          # next file
+            '-'*)  body_old=$((body_old+1)) ;;
+            '+'*)  body_new=$((body_new+1)) ;;
+            ' '*)  body_old=$((body_old+1)); body_new=$((body_new+1)) ;;
+            '\\')  ;;                                 # "\ No newline at end of file"
+            *)     old_decl="" ;;
+        esac
+    done < "${f}"
+    if [[ -n "${old_decl}" ]]; then
+        if [[ "${body_old}" != "${old_decl}" || "${body_new}" != "${new_decl}" ]]; then
+            printf '  %s:%s last hunk declares -%s +%s but body has -%s +%s\n' \
+                "$(basename "$f")" "$hunk_line" "${old_decl}" "${new_decl}" "${body_old}" "${body_new}"
+            patch_bad=$((patch_bad+1))
+        fi
+    fi
+}
+patch_count=0
+while IFS= read -r pf; do
+    patch_count=$((patch_count+1))
+    check_patch "${pf}"
+    # git am needs a mail-format envelope; without From:/Subject: it refuses.
+    # The diff may sit well below the headers after a long commit message, so
+    # scan the whole file rather than the first few lines.
+    for hdr in "^From: " "^Subject: \[PATCH\]" "^diff --git "; do
+        if ! grep -qE "${hdr}" "${pf}"; then
+            printf '  %s has no %s line (git am would refuse it)\n' "$(basename "${pf}")" "${hdr}"
+            patch_bad=$((patch_bad+1))
+        fi
+    done
+done < <(find "${ROOT}/patches" -name '*.patch' 2>/dev/null | sort)
+assert_eq "every patch is a well-formed mail patch" "0" "${patch_bad}"
+
+# A patch must not delete a licence header (GPL-2.0 section 2(a)).
+spdx_removed=$(grep -rlE '^-.*SPDX-License-Identifier' "${ROOT}/patches" 2>/dev/null | wc -l)
+assert_eq "no patch removes an SPDX header" "0" "${spdx_removed}"
+
+#==============================================================================
 section "version → path derivation"
 #==============================================================================
 

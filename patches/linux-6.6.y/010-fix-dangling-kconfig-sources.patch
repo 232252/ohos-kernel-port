@@ -1,0 +1,123 @@
+From 542e717c924749705b2faca85ed139dcd9281a99 Mon Sep 17 00:00:00 2001
+From: ohos-kernel-port contributors <232252@users.noreply.github.com>
+Date: Sun, 4 Oct 2026 22:18:44 +0800
+Subject: [PATCH] fs: make the 6.6 tree's Kconfig references resolvable
+
+SPDX-License-Identifier: GPL-2.0-only
+
+Baseline: gitcode.com/openharmony/kernel_linux_6.6
+Branch:   OpenHarmony-7.0-Release
+Commit:   f4b61510491aa20f7f57fbbc5efc754083c92212
+
+fs/Kconfig on every OpenHarmony 6.6 release branch sources three files that
+are not tracked in the repository:
+
+    source "fs/proc/memory_security/Kconfig"   (fs/Kconfig:54)
+    source "fs/code_sign/Kconfig"              (fs/Kconfig:132)
+    source "fs/dec/Kconfig"                    (fs/Kconfig:134)
+
+Verified absent from OpenHarmony-6.0-Release, -6.1-Release, -7.0-Beta1 and
+-7.0-Release.  Upstream Linux v6.6 references none of the three, so this is
+OpenHarmony's own addition, left incomplete.
+
+The effect is that kbuild cannot start at all on a pristine clone:
+
+    $ make O=out ARCH=arm64 olddefconfig
+    fs/Kconfig:54: can't open file "fs/proc/memory_security/Kconfig"
+    make[3]: *** [scripts/kconfig/Makefile:77: olddefconfig] Error 1
+
+fs/proc/Makefile:37 compounds it with
+
+    obj-$(CONFIG_MEMORY_SECURITY) += memory_security/
+
+which names a directory that does not exist.
+
+Why not simply delete the references
+-------------------------------------
+kernel_linux_config/linux-6.6/rk3568/arch/arm64_defconfig sets
+
+    CONFIG_MEMORY_SECURITY=y          (line 6174)
+
+so the symbol must remain definable.  Dropping the Kconfig would let
+olddefconfig discard it silently, and a board configuration would quietly lose
+a setting it asks for.
+
+What this patch does
+--------------------
+1. Adds fs/proc/memory_security/Kconfig, defining MEMORY_SECURITY so the
+   option resolves and the existing board configuration validates.  It is
+   deliberately a declaration only: this tree ships no implementation to
+   compile.
+2. Removes the obj-$(CONFIG_MEMORY_SECURITY) line, because the directory it
+   names does not exist.  Enabling the option now builds nothing extra, which
+   is the true state of the tree.
+3. Removes the two source lines for code_sign and fs/dec.  No configuration
+   references symbols from either and nothing builds them, so those lines are
+   dead references rather than missing declarations.
+
+When OpenHarmony lands the real subsystems this patch should be dropped: the
+three Kconfig files and the obj- line will exist, and ohos-kb will report that
+the patch no longer applies rather than silently mis-building.
+
+Upstream: no equivalent change; these files are not part of Linux v6.6.
+Licence: GPL-2.0-only, same as the tree.
+---
+ fs/Kconfig                      |  6 ------
+ fs/proc/Makefile                |  1 -
+ fs/proc/memory_security/Kconfig | 11 +++++++++++
+ 3 files changed, 11 insertions(+), 7 deletions(-)
+ create mode 100644 fs/proc/memory_security/Kconfig
+
+diff --git a/fs/Kconfig b/fs/Kconfig
+index dc6d084..19d4c08 100644
+--- a/fs/Kconfig
++++ b/fs/Kconfig
+@@ -51,8 +51,6 @@ source "fs/btrfs/Kconfig"
+ source "fs/nilfs2/Kconfig"
+ source "fs/f2fs/Kconfig"
+ source "fs/zonefs/Kconfig"
+-source "fs/proc/memory_security/Kconfig"
+-
+ endif # BLOCK
+ 
+ config FS_DAX
+@@ -129,10 +127,6 @@ config FILE_LOCKING
+ 
+ source "fs/crypto/Kconfig"
+ 
+-source "fs/code_sign/Kconfig"
+-
+-source "fs/dec/Kconfig"
+-
+ source "fs/verity/Kconfig"
+ 
+ source "fs/notify/Kconfig"
+diff --git a/fs/proc/Makefile b/fs/proc/Makefile
+index 04a0dd7..bd08616 100644
+--- a/fs/proc/Makefile
++++ b/fs/proc/Makefile
+@@ -34,4 +34,3 @@ proc-$(CONFIG_PROC_VMCORE)	+= vmcore.o
+ proc-$(CONFIG_PRINTK)	+= kmsg.o
+ proc-$(CONFIG_PROC_PAGE_MONITOR)	+= page.o
+ proc-$(CONFIG_BOOT_CONFIG)	+= bootconfig.o
+-obj-$(CONFIG_MEMORY_SECURITY) += memory_security/
+diff --git a/fs/proc/memory_security/Kconfig b/fs/proc/memory_security/Kconfig
+new file mode 100644
+index 0000000..9280d58
+--- /dev/null
++++ b/fs/proc/memory_security/Kconfig
+@@ -0,0 +1,11 @@
++# SPDX-License-Identifier: GPL-2.0-only
++#
++# Declared for configuration compatibility only.  This tree ships no
++# implementation of the memory_security subsystem, so enabling this option
++# builds nothing.  It exists so that board configurations that request
++# CONFIG_MEMORY_SECURITY=y keep validating.
++#
++# Remove this file, and the obj-$(CONFIG_MEMORY_SECURITY) line in
++# fs/proc/Makefile, when OpenHarmony lands the real subsystem.
++config MEMORY_SECURITY
++	bool
+-- 
+2.39.5
+

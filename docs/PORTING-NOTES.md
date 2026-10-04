@@ -98,7 +98,69 @@ Consequences:
   hardware of that era did not enable. Treat bring-up failures as a config
   question first.
 
-## 5. Version stamping should be off
+## 5. The OpenHarmony 6.6 tree cannot run kbuild on a pristine clone
+
+This is the finding that most shaped the port, and it is not obvious from the
+outside.
+
+`fs/Kconfig` in `kernel_linux_6.6` sources three files that **are not tracked
+in the repository**:
+
+```
+source "fs/proc/memory_security/Kconfig"   (fs/Kconfig:54)
+source "fs/code_sign/Kconfig"              (fs/Kconfig:132)
+source "fs/dec/Kconfig"                    (fs/Kconfig:134)
+```
+
+Checked on `OpenHarmony-6.0-Release`, `OpenHarmony-6.1-Release`,
+`OpenHarmony-7.0-Beta1` and `OpenHarmony-7.0-Release`: all four reference all
+three, and none of the three directories exists. Upstream Linux v6.6 references
+none of them, so this is an OpenHarmony addition that was never completed.
+
+The consequence is that kbuild cannot start at all:
+
+```
+$ make O=out ARCH=arm64 olddefconfig
+fs/Kconfig:54: can't open file "fs/proc/memory_security/Kconfig"
+make[3]: *** [scripts/kconfig/Makefile:77: olddefconfig] Error 1
+```
+
+`fs/proc/Makefile:37` compounds it:
+
+```
+obj-$(CONFIG_MEMORY_SECURITY) += memory_security/
+```
+
+naming a directory that is not there.
+
+**Why the fix cannot simply delete the references.** The rk3568 board
+configuration — `kernel_linux_config/linux-6.6/rk3568/arch/arm64_defconfig` —
+sets `CONFIG_MEMORY_SECURITY=y` at line 6174. Removing the Kconfig lets
+`olddefconfig` discard the symbol silently, and a board configuration would
+quietly lose a setting it asks for.
+
+**What `patches/linux-6.6.y/010-fix-dangling-kconfig-sources.patch` does:**
+
+1. Adds `fs/proc/memory_security/Kconfig` defining `MEMORY_SECURITY`, so the
+   option resolves and the board configuration validates. Declaration only:
+   there is no implementation in this tree to compile.
+2. Removes the `obj-$(CONFIG_MEMORY_SECURITY)` line, because the directory it
+   names does not exist.
+3. Removes the two `source` lines for `code_sign` and `fs/dec`. No
+   configuration references symbols from either and nothing builds them.
+
+When OpenHarmony lands the real subsystems, drop the patch: the files and the
+`obj-` line will exist, and `ohos-kb` will report that the patch no longer
+applies rather than silently mis-building.
+
+**The general lesson.** A shallow clone with `--depth 1 --single-branch` is
+what everyone uses, and a tree can be internally inconsistent in ways that only
+show up when you run the build. `ohos-kb` therefore does not assume a fetched
+tree is coherent: the patch layer exists to make it so, and the self-tests
+validate every patch's hunk arithmetic, because a malformed patch is otherwise
+only discovered at hour one of a build.
+
+## 6. Version stamping should be off
 
 ophub appends a signature to every kernel it builds — `-ophub`, `-yourname`, or
 a seasonal joke. Armbian and OpenWrt select kernels by version string, so this
@@ -109,7 +171,7 @@ proposition is that it tracks a specific release. An injected `LOCALVERSION`
 makes the artifact differ from the release it claims to reproduce, for no gain.
 `ohos-kb` therefore leaves it off unless you pass `--sign`.
 
-## 6. Patching, and the 6.6.101 cliff
+## 7. Patching, and the 6.6.101 cliff
 
 ophub applies patches with `common-kernel-patches/` first then the
 series directory, skipping any other directory name — which is how
@@ -127,7 +189,7 @@ applied by default. It is the project's own patch set for its own branches, and
 the kernel repositories already contain its results. Applying it again would be
 a double-apply. Reach for it only when reproducing an OpenHarmory CI run.
 
-## 7. Toolchain: clang is the intended compiler
+## 8. Toolchain: clang is the intended compiler
 
 `kernel_linux_config/linux-6.6/base_defconfig` sets `CONFIG_CFI_CLANG`, which
 only clang satisfies. A gcc build does not fail — gcc simply drops the option,
@@ -139,7 +201,7 @@ the one OpenHarmony ships.
 their real SHA-256 digests, taken from the GitHub Releases API; the naming is
 not what you would guess, which is why the table exists.
 
-## 8. Patching versus the authoring sandbox
+## 9. Patching versus the authoring sandbox
 
 Building a 6.6 arm64 kernel needs on the order of 40 GB of disk and far more
 than 3 GB of RAM. It belongs in CI. What is worth running locally is

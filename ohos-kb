@@ -325,8 +325,11 @@ setup_build_toolchain() {
     log_ok "toolchain: ${OKCP_CROSS_COMPILE}gcc from ${OKCP_TOOLCHAIN_PREFIX}"
 }
 
-cmd_build()   { set_lane "${1:-${OPT_LANE_ARG:-primary}}"; local sd; sd=$(lane_srcdir)
-                 require_file "${sd}/.config" || die "run 'ohos-kb config ${LANE}' first"
+cmd_build()   { set_lane "${1:-${OPT_LANE_ARG:-primary}}"; local sd kd; sd=$(lane_srcdir); kd=$(lane_outdir "${LANE}")
+                 require_file "${kd}/.config" || die "no configuration for ${LANE}
+  The build is out-of-tree, so the config lives at the kbuild directory:
+    ${kd#"${OKCP_ROOT}"/}/.config
+  Run: ohos-kb config ${LANE}"
                  setup_build_toolchain
                  if [[ -n "${OPT_SIGN}" ]]; then stamp_version "${sd}" "${OPT_SIGN}" "$(lane_arch "${LANE}")"; fi
                  build_kernel "${LANE}" "${sd}" "$(lane_outdir "${LANE}")" >/dev/null; }
