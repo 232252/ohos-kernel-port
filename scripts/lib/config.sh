@@ -106,21 +106,42 @@ collect_local_fragments() {
 }
 
 #--------------------------------------------------------------- merging
+# _merge_fragments <srcdir> <out_config> <fragment...>
+#
+# Delegates to the kernel's own scripts/kconfig/merge_config.sh so we inherit
+# upstream's conflict handling instead of reimplementing it.
+#
+#   -O <dir>   where merge_config.sh writes its intermediate Kconfig overrides
+#   -m <file>  the merged result, which is what we want
+#
+# The merged configuration lands in the -m argument, NOT in <dir>/.config.  An
+# earlier version copied <dir>/.config over the result, silently replacing a
+# real configuration with an empty file.
 _merge_fragments() {
     local srcdir=$1 out=$2; shift 2
     local -a frags=()
     local f
-    for f in "$@"; do [[ -s "${f}" ]] && frags+=("${f}"); done
-    [[ ${#frags[@]} -gt 0 ]] || die "no config fragments to merge"
+    for f in "$@"; do
+        if [[ -s "${f}" ]]; then frags+=("${f}"); fi
+    done
+    if [[ ${#frags[@]} -eq 0 ]]; then
+        die "no config fragments to merge"
+    fi
 
     local merge="${srcdir}/scripts/kconfig/merge_config.sh"
     if [[ ! -x "${merge}" ]]; then
-        die "${merge} not found or executable; cannot merge config fragments"
+        die "${merge} not found or not executable; cannot merge config fragments"
     fi
+
     local tmp; tmp=$(make_tmpdir)
-    ( cd "${srcdir}" && bash "${merge}" -O "${tmp}" -m "${out}" "${frags[@]}" ) \
-        || log_warn "merge_config.sh exited non-zero (continuing; olddefconfig will settle it)"
-    [[ -f "${tmp}/.config" ]] && cp "${tmp}/.config" "${out}"
+    if ! ( cd "${srcdir}" && bash "${merge}" -O "${tmp}" -m "${out}" "${frags[@]}" ); then
+        log_warn "merge_config.sh exited non-zero (continuing; olddefconfig will settle it)"
+    fi
+    if [[ ! -s "${out}" ]]; then
+        die "config merge produced an empty ${out}
+  fragments: $(printf '%s ' ${frags[@]+"${frags[@]}"})
+  Check that ${merge} exists in the source tree and accepts -O/-m."
+    fi
     rm -rf "${tmp}"
     printf '%s\n' "${out}"
 }
@@ -148,7 +169,11 @@ generate_config() {
 
     #-- layers 1-2: the OpenHarmony config repo -------------------------
     elif [[ "$(lane_source_kind "${lane}")" == "ohos" && -z "${OKCP_NO_OHOS_CONFIG:-}" ]]; then
-        local cfgroot series base_def type_def board_def
+        # Every one of these is initialised to the empty string on purpose.
+        # Under `set -u`, `local x` with no assignment leaves x *unset*, so a
+        # short-circuited `[[ cond ]] && x=...` makes any later reference fail
+        # with "unbound variable" instead of simply being empty.
+        local cfgroot="" series="" base_def="" type_def="" board_def=""
         series=$(kernel_series "$(lane_kver "${lane}")")
         cfgroot=$(fetch_ohos_config_repo "${lane}")
 
@@ -169,13 +194,15 @@ generate_config() {
            || -f "${cfgroot}/linux-${series}/type/${OKCP_SYSTEM_TYPE}_defconfig" ]]; then
             base_def="${cfgroot}/linux-${series}/base_defconfig"
             type_def="${cfgroot}/linux-${series}/type/${OKCP_SYSTEM_TYPE}_defconfig"
-            [[ -n "${OKCP_BOARD}" && -d "${cfgroot}/linux-${series}/${OKCP_BOARD}" ]] && \
+            if [[ -n "${OKCP_BOARD}" && -d "${cfgroot}/linux-${series}/${OKCP_BOARD}" ]]; then
                 board_def="${cfgroot}/linux-${series}/${OKCP_BOARD}/arch/${arch}_defconfig"
+            fi
         else
             local legacy="${cfgroot}/linux-${series}/arch/${arch}/configs"
             type_def="${legacy}/${OKCP_SYSTEM_TYPE}_common_defconfig"
-            [[ -n "${OKCP_BOARD}" ]] && board_def="${legacy}/${OKCP_BOARD}_${OKCP_SYSTEM_TYPE}_defconfig"
-            base_def=""
+            if [[ -n "${OKCP_BOARD}" ]]; then
+                board_def="${legacy}/${OKCP_BOARD}_${OKCP_SYSTEM_TYPE}_defconfig"
+            fi
         fi
 
         if [[ -n "${board_def}" && -f "${board_def}" ]] && config_is_full "${board_def}"; then
@@ -184,10 +211,10 @@ generate_config() {
             mode="full"; cp "${board_def}" "${out}"
         elif [[ -f "${base_def}" || -f "${type_def}" ]]; then
             log_step "config: OpenHarmony config repo (linux-${series}, type/${OKCP_SYSTEM_TYPE})"
-            [[ -f "${base_def}" ]] && frags+=("${base_def}")
-            [[ -f "${type_def}" ]] && frags+=("${type_def}")
+            [[ -f "${base_def}" ]]  && frags+=("${base_def}")
+            [[ -f "${type_def}" ]]  && frags+=("${type_def}")
             [[ -f "${board_def}" ]] && frags+=("${board_def}")
-            base_desc="kernel_linux_config linux-${kver} (fragments)"
+            base_desc="kernel_linux_config linux-${series} (${#frags[@]} fragment(s))"
         fi
     fi
 
@@ -216,7 +243,17 @@ generate_config() {
         frags+=("${local_frags[@]}")
     fi
 
-    require_file "${out}" || die "config generation produced no ${out}"
+    # Nothing selected a base configuration and there is nothing to merge: that
+    # is a real error.  The check must allow for the fragment path, where
+    # ${out} does not exist yet because the merge below is what creates it.
+    if [[ ! -f "${out}" && ${#frags[@]} -eq 0 ]]; then
+        die "no base configuration was selected for lane '${lane}'
+  Expected one of:
+    - a complete board config in kernel_linux_config/linux-${series}/
+    - kernel_linux_config/linux-${series}/{base,type/} defconfig
+    - ${srcdir}/arch/${arch}/configs/defconfig
+  Run './ohos-kb show ${lane}' to see what this lane resolves to."
+    fi
 
     #-- merge -------------------------------------------------------------
     if [[ ${#frags[@]} -gt 0 ]]; then

@@ -1,0 +1,4 @@
+# The in-tree defconfig — deliberately NOT an OpenHarmony configuration.
+CONFIG_ARM64=y
+CONFIG_LOCALVERSION=""
+CONFIG_MODULES=y

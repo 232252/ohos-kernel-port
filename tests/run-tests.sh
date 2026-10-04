@@ -311,6 +311,66 @@ for f in docs/VERSION-MATRIX.md docs/PORTING-NOTES.md docs/BOOT-IMAGE.md docs/CO
 done
 
 #==============================================================================
+section "config generation, end to end"
+#==============================================================================
+
+# Everything above tests pieces.  This drives generate_config against a real
+# OpenHarmony kernel_linux_config checkout and a stand-in kernel tree, which is
+# how the two bugs that only CI could find were caught:
+#
+#   * `local board_def` with no assignment left the variable *unset* under
+#     `set -u`, so a short-circuited `[[ -n "$OKCP_BOARD" ]] && board_def=...`
+#     turned a plain fragment build into "unbound variable".
+#   * The base-existence guard ran before the merge, so the fragment path — the
+#     one lane without a board layer uses, i.e. the common case — always died.
+#
+# Needs the network for the config repository, so it skips cleanly offline.
+# shellcheck disable=SC1091
+source "${ROOT}/scripts/lib/config.sh"
+
+FIXTURE="${ROOT}/tests/fixtures/fake-kernel"
+CFG_OK=1
+
+config_probe() {  # <label> <lane> <expected-lines|-> [ENV=VAL ...]
+    local label=$1 lane=$2 want=$3; shift 3
+    local work; work=$(make_tmpdir)
+    cp -r "${FIXTURE}" "${work}/kernel"
+    (
+        export OKCP_WORKDIR="${OKCP_WORKDIR:-${work}/build}"
+        export "$@"
+        generate_config "${lane}" "${work}/kernel" "${work}/kernel" >/dev/null 2>&1
+    ) || {
+        printf '  \033[0;31mFAIL\033[0m %s: generate_config exited non-zero\n' "${label}"
+        FAIL=$((FAIL+1)); FAILURES+=("${label}: generate_config failed"); CFG_OK=0
+        rm -rf "${work}"; return
+    }
+    local n; n=$(wc -l < "${work}/kernel/.config" 2>/dev/null || echo 0)
+    if [[ "${want}" == "-" || "${n}" == "${want}" ]]; then
+        PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   %s (%s lines)\n' "${label}" "${n}"
+    else
+        FAIL=$((FAIL+1)); FAILURES+=("${label}: expected ${want} lines, got ${n}"); CFG_OK=0
+        printf '  \033[0;31mFAIL\033[0m %s: expected %s lines, got %s\n' "${label}" "${want}" "${n}"
+    fi
+    rm -rf "${work}"
+}
+
+if ! have curl; then
+    SKIP=$((SKIP+1)); printf '  skip end-to-end config tests (no curl)\n'
+elif ! http_get -o /dev/null "https://gitcode.com/openharmony/kernel_linux_config.git/info/refs?service=git-upload-pack" 2>/dev/null; then
+    SKIP=$((SKIP+4))
+    printf '  skip end-to-end config tests (cannot reach gitcode; run tests/run-tests.sh --online)\n'
+else
+    # Expected line counts are those of the real OpenHarmony files at
+    # OpenHarmony-7.0-Release, so a layout change upstream shows up here.
+    config_probe "6.6 fragments (base + type/standard)" ohos-7.0-6.6   - OKCP_BOARD=
+    config_probe "6.6 + rk3568 (complete board config)" ohos-7.0-6.6  6193 OKCP_BOARD=rk3568
+    config_probe "5.10 fragments (type/small)"          ohos-7.0-5.10  - OKCP_BOARD= OKCP_SYSTEM_TYPE=small
+    config_probe "5.10 fragments (type/standard)"       ohos-7.0-5.10  - OKCP_BOARD=
+    config_probe "4.19 legacy layout (arch/arm/configs)" ohos-4.0b1-4.19 - OKCP_ARCH=arm OKCP_BOARD=
+    config_probe "4.19 + hispark_taurus (complete)"     ohos-4.0b1-4.19 3327 OKCP_ARCH=arm OKCP_BOARD=hispark_taurus
+fi
+
+#==============================================================================
 section "version → path derivation"
 #==============================================================================
 
