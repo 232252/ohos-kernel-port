@@ -101,6 +101,21 @@ jobs:
             exit 1
           fi
 
+      - name: Audit the source tree's headers
+        # The twin of the Kconfig audit: a missing <...> header stops the
+        # compile at the first C file, so find them all in one pass too.
+        run: |
+          set -euo pipefail
+          tree=$(find build/src -maxdepth 2 -name Makefile -path '*ohos-*' | head -1)
+          [[ -n "$tree" ]] || { echo "::error::no kernel tree found"; exit 1; }
+          tree=$(dirname "$tree")
+          echo "auditing headers in $tree"
+          if ! python3 tools/audit-includes.py "$tree"; then
+            echo "::error::the kernel tree includes headers that are not present."
+            echo "::error::see docs/PORTING-NOTES.md and patches/ for the shipped fix."
+            exit 1
+          fi
+
       - name: Locate the resolved configuration
         id: find
         run: |

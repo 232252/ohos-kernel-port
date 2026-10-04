@@ -163,6 +163,59 @@ When OpenHarmony lands the real subsystems, drop the patch: the files and the
 `obj-` lines will exist, and `ohos-kb` will report that the patch no longer
 applies rather than silently mis-building.
 
+## 5a. The same tree is also missing a header
+
+With the Kconfig graph fixed, kconfig runs to completion — the resolved
+configuration goes from 1349 lines to a full **5812** — and the compile then
+stops at the first C file:
+
+```
+CC      arch/arm64/kernel/asm-offsets.s
+include/linux/mm_types.h:22:10: fatal error: linux/xpm_types.h: No such file or directory
+   22 | #include <linux/xpm_types.h>
+```
+
+`include/linux/xpm_types.h` is not tracked, and neither `struct xpm_region` nor
+`struct cs_info` is defined anywhere in the tree. Three files include it:
+
+* `include/linux/mm_types.h:22`
+* `include/linux/hck/lite_hck_code_sign.h:9`
+* `fs/verity/fsverity_private.h:15`
+
+**This cannot be fixed by disabling the option.** The include in `mm_types.h`
+is unconditional; only the uses are guarded:
+
+```c
+#include <linux/xpm_types.h>          /* line 22, unconditional */
+...
+#ifdef CONFIG_SECURITY_XPM
+        struct xpm_region xpm_region; /* line 990 */
+#endif
+#ifdef CONFIG_SECURITY_CODE_SIGN
+        struct cs_info pcs_info;
+#endif
+```
+
+`kernel_linux_config/linux-6.6/base_defconfig:18` sets `CONFIG_SECURITY_XPM=y`,
+so that branch *is* compiled and `struct xpm_region` must be a complete type
+that can be embedded by value in `mm_struct`.
+
+`patches/linux-6.6.y/020-add-missing-xpm-types-header.patch` supplies the
+header with declaration-only types. It edits **no existing file** — deliberately,
+because `mm_types.h` is core and supplying a missing header is safer than
+editing one. The field layouts are placeholders, not the real XPM ABI: there is
+no xpm implementation in this tree to have an ABI.
+
+Worth noting: `include/linux/hck/lite_hck_xpm.h` **is** present and carries
+"Copyright (c) 2023 Huawei Device Co., Ltd." So the feature is partially
+landed. That is the same pattern as the Kconfig sources and the `obj-` hooks —
+the glue was committed and the implementation was not.
+
+`tools/audit-includes.py` is the header-side twin of the Kconfig auditor: it
+resolves every `#include <...>` against the kernel's own include paths and
+reports all of them at once. `ci/kernel-config-check.yml` runs both, so
+either class of hole fails the fast job rather than the hour-long one.
+
 **How to find these yourself, in one pass.** kconfig stops at the first
 unresolved source, so a build reveals these one at a time — at roughly ten
 minutes per CI run, which is how three of them were found and the fourth and

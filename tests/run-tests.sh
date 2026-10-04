@@ -732,6 +732,81 @@ else
 fi
 
 #==============================================================================
+section "tree auditors"
+#==============================================================================
+
+# OpenHarmony's 6.6 tree references things that were never committed, and a
+# build reveals them one at a time.  Both auditors exist to collapse that into
+# one pass; each must work and must not cry wolf.
+# Each auditor looks at a different kind of file, so each case is built to
+# match: audit-kconfig.py only reads files named Kconfig*, and
+# audit-includes.py resolves <...> through include/.
+t=$(make_tmpdir)
+mkdir -p "${t}/fs/present"
+printf 'source "fs/present/Kconfig"\nsource "fs/proc/missing/Kconfig"\n' > "${t}/fs/Kconfig"
+printf 'config PRESENT\n' > "${t}/fs/present/Kconfig"
+out=$(python3 "${ROOT}/tools/audit-kconfig.py" "${t}" --json 2>&1); rc=$?
+if [[ ${rc} -ne 0 ]] && grep -qF "fs/proc/missing/Kconfig" <<< "${out}" \
+   && ! grep -qF '"fs/present/Kconfig"' <<< "${out}"; then
+    PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   audit-kconfig.py flags the missing source and not the present one\n'
+else
+    FAIL=$((FAIL+1)); FAILURES+=("audit-kconfig.py misreports")
+    printf '  \033[0;31mFAIL\033[0m audit-kconfig.py misreports (rc=%s)\n' "${rc}"
+fi
+rm -rf "${t}"
+
+t=$(make_tmpdir)
+mkdir -p "${t}/include/linux"
+printf '#include <linux/present.h>\n#include <linux/gone.h>\n' > "${t}/probe.c"
+printf '#define STUB 1\n' > "${t}/include/linux/present.h"
+out=$(python3 "${ROOT}/tools/audit-includes.py" "${t}" --json 2>&1); rc=$?
+if [[ ${rc} -ne 0 ]] && grep -qF "linux/gone.h" <<< "${out}" \
+   && ! grep -qF '"linux/present.h"' <<< "${out}"; then
+    PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   audit-includes.py flags the missing header and not the present one\n'
+else
+    FAIL=$((FAIL+1)); FAILURES+=("audit-includes.py misreports")
+    printf '  \033[0;31mFAIL\033[0m audit-includes.py misreports (rc=%s)\n' "${rc}"
+fi
+rm -rf "${t}"
+
+for tool in audit-kconfig.py audit-includes.py; do
+    if [[ ! -x "${ROOT}/tools/${tool}" ]]; then
+        FAIL=$((FAIL+1)); FAILURES+=("tools/${tool} is missing")
+        printf '  \033[0;31mFAIL\033[0m tools/%s is missing\n' "${tool}"
+    else
+        PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   tools/%s is present and executable\n' "${tool}"
+    fi
+done
+
+# A clean tree must exit zero, or the auditors would fail every build.
+t=$(make_tmpdir); mkdir -p "${t}/include/linux"
+printf '#include <linux/ok.h>\n' > "${t}/a.c"
+printf '#define OK 1\n' > "${t}/include/linux/ok.h"
+for tool in audit-kconfig.py audit-includes.py; do
+    if python3 "${ROOT}/tools/${tool}" "${t}" >/dev/null 2>&1; then
+        PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   tools/%s accepts a consistent tree\n' "${tool}"
+    else
+        FAIL=$((FAIL+1)); FAILURES+=("tools/${tool} rejected a consistent tree")
+        printf '  \033[0;31mFAIL\033[0m tools/%s rejected a consistent tree\n' "${tool}"
+    fi
+done
+rm -rf "${t}"
+
+# The shipped xpm shim must define exactly what mm_types.h embeds by value.
+if [[ -f "${ROOT}/patches/linux-6.6.y/020-add-missing-xpm-types-header.patch" ]]; then
+    if grep -q "^config MEMORY_SECURITY" /dev/null 2>/dev/null; then :; fi
+    if grep -qE "^\+struct xpm_region \{" "${ROOT}/patches/linux-6.6.y/020-add-missing-xpm-types-header.patch"; then
+        PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   the xpm shim defines a complete struct xpm_region\n'
+    else
+        FAIL=$((FAIL+1)); FAILURES+=("the xpm shim does not define struct xpm_region by value")
+        printf '  \033[0;31mFAIL\033[0m the xpm shim does not define struct xpm_region\n'
+    fi
+else
+    FAIL=$((FAIL+1)); FAILURES+=("the xpm shim patch is missing")
+    printf '  \033[0;31mFAIL\033[0m the xpm shim patch is missing\n'
+fi
+
+#==============================================================================
 section "version → path derivation"
 #==============================================================================
 
