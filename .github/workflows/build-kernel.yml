@@ -37,11 +37,9 @@ on:
         type: choice
         options: [standard, small]
       toolchain:
-        description: "Cross toolchain"
+        description: "Cross toolchain: 'host', or an id from data/toolchains.tsv"
         required: false
-        default: "gcc"
-        type: choice
-        options: [gcc, clang]
+        default: "host"
       ccache_clear:
         description: "Clear the compiler cache first"
         required: false
@@ -176,9 +174,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ccache
-          key: ccache-${{ matrix.lane }}-${{ inputs.toolchain || 'gcc' }}-${{ github.sha }}
+          key: ccache-${{ matrix.lane }}-${{ inputs.toolchain || 'host' }}-${{ github.sha }}
           restore-keys: |
-            ccache-${{ matrix.lane }}-${{ inputs.toolchain || 'gcc' }}-
+            ccache-${{ matrix.lane }}-${{ inputs.toolchain || 'host' }}-
 
       - name: Check the environment
         run: ./ohos-kb doctor | tee -a "$GITHUB_STEP_SUMMARY"
@@ -188,10 +186,10 @@ jobs:
         env:
           BOARD: ${{ inputs.board }}
           SYSTEM_TYPE: ${{ inputs.system_type || 'standard' }}
-          TOOLCHAIN: ${{ inputs.toolchain || 'gcc' }}
+          TOOLCHAIN: ${{ inputs.toolchain || 'host' }}
         run: |
           set -euo pipefail
-          args=(all "${{ matrix.lane }}" --cc "$TOOLCHAIN" --type "$SYSTEM_TYPE")
+          args=(all "${{ matrix.lane }}" --toolchain "$TOOLCHAIN" --type "$SYSTEM_TYPE")
           [[ -n "$BOARD" ]] && args+=(--board "$BOARD")
           ./ohos-kb "${args[@]}" 2>&1 | tee build.log
           # Make the artifact directory predictable for the upload step.
@@ -216,7 +214,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-${{ matrix.lane }}-${{ inputs.toolchain || 'gcc' }}
+          name: kernel-${{ matrix.lane }}-${{ inputs.toolchain || 'host' }}
           path: ${{ env.OKCP_WORKDIR || format('{0}/build', github.workspace) }}/artifacts/${{ matrix.lane }}/**
           if-no-files-found: error
           retention-days: 30

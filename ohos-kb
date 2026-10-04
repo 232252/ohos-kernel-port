@@ -281,6 +281,7 @@ cmd_config()  { set_lane "${1:-${OPT_LANE_ARG:-primary}}"; local sd; sd=$(lane_s
 # unpacks; "host" uses the aarch64 cross compiler already installed.
 setup_build_toolchain() {
     local tc=${1:-${OKCP_TOOLCHAIN:-host}}
+    [[ -n "${tc}" ]] || tc=host
     if [[ "${tc}" == "host" ]]; then
         if ! host_toolchain_prefix >/dev/null 2>&1; then
             log_warn "no aarch64 cross compiler found on PATH."
@@ -293,10 +294,32 @@ setup_build_toolchain() {
         log_ok "toolchain: ${OKCP_CROSS_COMPILE}gcc (host)"
         return 0
     fi
-    local -a envlines
-    mapfile -t envlines < <(toolchain_env "${tc}")
+    # Validate the id against the table, in THIS shell.
+    #
+    # Two separate reasons this cannot be left to a helper: a process
+    # substitution runs in a subshell, where die() only leaves that subshell —
+    # mapfile would return empty and the build would carry on with no compiler.
+    # And tc_select does not validate an id at all; it picks a *default*, so
+    # asking it about "no-such-toolchain" happily returns a working entry and
+    # the real lookup then builds a URL with an empty filename.
+    if ! tc_ids | grep -qx -- "${tc}"; then
+        log_error "unknown toolchain id '${tc}'"
+        log_error "  available:"
+        tc_table | sed 's/^/    /'
+        die "pick one of the ids above, or use --toolchain host"
+    fi
+
+    local -a envlines=()
+    mapfile -t envlines < <(toolchain_env "${tc}" || true)
+    if [[ ${#envlines[@]} -eq 0 ]]; then
+        die "toolchain_env produced nothing for '${tc}'
+  The download may have failed; run with --debug for the underlying error."
+    fi
     local l
     for l in "${envlines[@]}"; do
+        if [[ "${l}" != *=* ]]; then
+            die "toolchain_env emitted a malformed line: '${l}'"
+        fi
         export "${l?}"
     done
     log_ok "toolchain: ${OKCP_CROSS_COMPILE}gcc from ${OKCP_TOOLCHAIN_PREFIX}"

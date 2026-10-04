@@ -494,6 +494,50 @@ else
     PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   ohos-kb calls build_kernel with the current argument order\n'
 fi
 
+# A die() inside a process substitution only leaves the subshell, so the
+# caller keeps going with empty variables.  An unknown toolchain id therefore
+# has to be rejected in the caller's own shell, against the table itself —
+# tc_select would not help, because it picks a default rather than validating.
+bogus_out=$(bash -c '
+    set -euo pipefail
+    source "'"${ROOT}"'/scripts/lib/common.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/matrix.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/config.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/toolchain.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/build.sh" 2>/dev/null
+    LANE=ohos-7.0-6.6
+    eval "$(sed -n "/^setup_build_toolchain()/,/^}/p" "'"${ROOT}"'/ohos-kb")"
+    setup_build_toolchain no-such-toolchain
+' 2>&1)
+bogus_rc=$?
+if [[ "${bogus_rc}" -ne 0 ]] && grep -q "unknown toolchain id" <<< "${bogus_out}"; then
+    PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   an unknown toolchain id fails loudly\n'
+else
+    FAIL=$((FAIL+1)); FAILURES+=("an unknown toolchain id did not fail loudly (rc=${bogus_rc})")
+    printf '  \033[0;31mFAIL\033[0m an unknown toolchain id did not fail loudly (rc=%s)\n' "${bogus_rc}"
+fi
+
+# Every id in the table must be selectable and complete, or CI hands it a
+# broken download URL.
+tc_bad=0
+while IFS=$'\t' read -r id arch host ver asset digest size triple cc dflt; do
+    [[ -z "${id}" || "${id}" == \#* ]] && continue
+    for col in arch host ver asset digest triple; do
+        [[ -n "${!col:-}" ]] || { printf '  toolchain %s: empty %s\n' "${id}" "${col}"; tc_bad=$((tc_bad+1)); }
+    done
+    [[ "${digest}" =~ ^[0-9a-f]{64}$ ]] || { printf '  toolchain %s: digest is not a sha256\n' "${id}"; tc_bad=$((tc_bad+1)); }
+    [[ "${dflt}" == "1" ]] || true
+done < "${ROOT}/data/toolchains.tsv"
+assert_eq "every toolchain table row is complete" "0" "${tc_bad}"
+
+# No workflow may pass a toolchain value the CLI no longer accepts.
+if grep -rqn -- "--cc \"\$" "${ROOT}/.github/workflows" 2>/dev/null; then
+    FAIL=$((FAIL+1)); FAILURES+=("a workflow still uses the removed --cc flag")
+    printf '  \033[0;31mFAIL\033[0m a workflow still uses the removed --cc flag\n'
+else
+    PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   no workflow uses the removed --cc flag\n'
+fi
+
 #==============================================================================
 section "version → path derivation"
 #==============================================================================
