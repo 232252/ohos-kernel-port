@@ -1,0 +1,46 @@
+# ---- build artifacts ----
+build/
+out/
+*.deb
+*.img
+*.ko
+*.o
+*.cmd
+*.dtb
+*.dtbo
+Image
+vmlinux
+*.tar.gz
+*.zip
+
+# ---- kernel source trees (fetched on demand, never committed) ----
+kernel/
+src/
+.linux-src/
+*.linux/
+
+# ---- research / scratch (local only) ----
+.research/
+*.log
+.cache/
+ccache/
+
+# ---- secrets: never commit ----
+*.token
+.env
+.env.*
+id_rsa*
+*.pem
+secrets/
+
+# ---- editors / OS ----
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*~
+
+# ---- python ----
+__pycache__/
+*.pyc
+recon/

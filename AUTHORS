@@ -1,0 +1,87 @@
+# Authors and Credits
+
+SPDX-License-Identifier: GPL-2.0-only
+
+ohos-kernel-port is a derivative work. The original authorship belongs to the
+projects listed under "Derived from" below. This file records them; it does not
+attempt to reassign or supersede their copyright.
+
+## Derived from
+
+### ophub/kernel and ophub/amlogic-s9xxx-armbian
+
+    https://github.com/ophub/kernel
+    https://github.com/ophub/amlogic-s9xxx-armbian
+
+    Copyright (C) 2021 ophub contributors
+    Copyright (C) 2021 https://github.com/unifreq/openwrt_packit
+    Copyright (C) 2023 https://github.com/unifreq/linux-5.10.y-rk35xx
+
+    Licensed under the GNU General Public License, version 2.
+
+The multi-kernel build, patch-application, configuration-merging and
+CI-pipeline approach of this project originates here. See NOTICE for the
+substantive list of changes.
+
+### unifreq
+
+    https://github.com/unifreq/linux-6.6.y
+    https://github.com/unifreq/linux-5.10.y
+    https://github.com/unifreq/linux-5.15.y
+    https://github.com/unifreq/linux-6.1.y
+    https://github.com/unifreq/linux-6.12.y
+    https://github.com/unifreq/linux-6.18.y
+    https://github.com/unifreq/linux-5.10.y-rk35xx
+    https://github.com/unifreq/linux-6.1.y-rockchip
+
+    Copyright (C) the respective kernel authors.
+
+    Licensed under GPL-2.0 WITH Linux-syscall-note.
+
+ophub's kernel source trees are maintained by unifreq, and this project carries
+the same attribution for the `upstream-*` lanes in the lane matrix.
+
+### Linux kernel authors
+
+    https://github.com/torvalds/linux
+    https://www.kernel.org
+
+    Copyright (C) the Linux kernel authors.
+
+    Licensed under GPL-2.0 WITH Linux-syscall-note.
+
+For the full list of contributors to any kernel this project builds, see the
+`CREDITS` file and the git history of the corresponding kernel source tree
+recorded in each artifact's `MANIFEST.txt`. Those files are not reproduced
+here.
+
+## OpenHarmony kernel sources
+
+    https://gitcode.com/openharmony/kernel_linux_6.6
+    https://gitcode.com/openharmony/kernel_linux_5.10
+    https://gitcode.com/openharmony/kernel_linux_4.19
+    https://gitcode.com/openharmony/kernel_linux
+    https://gitcode.com/openharmony/kernel_linux_config
+    https://gitcode.com/openharmony/kernel_linux_patches
+    https://gitcode.com/openharmony/kernel_linux_build
+    https://gitcode.com/openharmony/kernel_linux_common_modules
+
+    Copyright (C) OpenHarmony Open Source Project.
+    Copyright (C) the respective kernel authors.
+
+    Licensed under the GNU General Public License, version 2 (kernel trees);
+    see each repository's own LICENSE for the others.
+
+This project *builds* these sources; it does not relicense or repackage them.
+Where configuration fragments or patch sets are consumed directly, they are
+used under the terms stated in their own repositories.
+
+## ohos-kernel-port contributors
+
+    Copyright (C) 2026 ohos-kernel-port contributors
+
+    SPDX-License-Identifier: GPL-2.0-only
+
+Contributions are accepted under the same terms as the rest of the project, as
+described in CONTRIBUTING.md. Sign-off is required (`git commit -s`) so that
+the GPL-2.0 authorisation chain stays unbroken.

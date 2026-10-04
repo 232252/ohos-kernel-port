@@ -1,0 +1,221 @@
+#==========================================================================
+# ohos-kernel-port — build an OpenHarmony kernel lane
+#
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026 ohos-kernel-port contributors
+#
+# Derived from the ophub/kernel CI approach
+#   Copyright (C) 2021 https://github.com/unifreq/openwrt_packit
+#   Copyright (C) 2021 https://github.com/ophub/kernel
+#
+# Changes relative to ophub/kernel (27d66795):
+#   2026-10-04  Replaced ophub's build action with a direct call to ./ohos-kb,
+#                so the workflow and the local CLI cannot drift apart.  Source
+#                is resolved from gitcode.com/openharmony and the kernel config
+#                comes from the OpenHarmony kernel_linux_config repository
+#                (the in-tree defconfig covers only 13% of what OpenHarmony
+#                configures, so using it alone would not produce an OHOS kernel).
+#==========================================================================
+
+name: Build OpenHarmony kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Lane to build"
+        required: false
+        default: "ohos-7.0-6.6"
+      board:
+        description: "OpenHarmony board layer (empty = none)"
+        required: false
+        default: ""
+      system_type:
+        description: "OpenHarmony system type"
+        required: false
+        default: "standard"
+        type: choice
+        options: [standard, small]
+      toolchain:
+        description: "Cross toolchain"
+        required: false
+        default: "gcc"
+        type: choice
+        options: [gcc, clang]
+      ccache_clear:
+        description: "Clear the compiler cache first"
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  repository_dispatch:
+    types: [ohos-kernel-build]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}-${{ inputs.lane || 'matrix' }}
+  cancel-in-progress: true
+
+env:
+  TZ: Etc/UTC
+  GIT_SSL_CAINFO: ${{ vars.GIT_SSL_CAINFO }}
+
+jobs:
+  verify-matrix:
+    name: Verify the lane matrix against the remotes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Re-check every lane against its remote Makefile
+        run: ./ohos-kb verify | tee verify.txt
+
+      - name: Build the lane matrix
+        id: set
+        run: |
+          set -euo pipefail
+          lane='${{ inputs.lane }}'
+          if [[ "$lane" == "all" || -z "$lane" ]]; then
+            lanes=$(./ohos-kb list-lanes | awk 'NR>1 && $1 ~ /^(ohos-|upstream-)/ {print $1}' | head -4)
+            inc=""
+            for l in $lanes; do
+              [[ -n "$inc" ]] && inc+=","
+              inc+="{\"lane\":\"$l\"}"
+            done
+            echo "matrix={\"include\":[$inc]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix={\"include\":[{\"lane\":\"$lane\"}]}" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: verify-matrix
+    name: build ${{ matrix.lane }}
+    runs-on: ${{ vars.OKCP_RUNNER || 'ubuntu-24.04-arm' }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.verify-matrix.outputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          # A 6.6 arm64 build needs roughly 40 GB of headroom; hosted runners
+          # ship with far less after the image overhead.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
+
+      - name: Extend the build volume
+        run: |
+          set -euo pipefail
+          avail=$(df --block-size=1G / | tail -1 | awk '{print $4}')
+          size=$(( avail - 6 ))
+          if (( size > 0 )); then
+            sudo truncate -s "${size}G" /builder.img
+            dev=$(sudo losetup --find --show /builder.img)
+            sudo mkfs.ext4 -F "${dev}"
+            sudo mkdir -p /builder
+            sudo mount "${dev}" /builder
+            sudo chown "$(id -u):$(id -g)" /builder
+            echo "OKCP_WORKDIR=/builder" >> "$GITHUB_ENV"
+            df -h /builder
+          else
+            echo "OKCP_WORKDIR=${{ github.workspace }}/build" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get -y install --no-install-recommends \
+            bc bison flex libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            ccache python3 rsync zip unzip xz-utils
+          sudo update-ccache symlinks
+          ccache -M 10G
+
+      - name: Clear the compiler cache
+        if: ${{ inputs.ccache_clear }}
+        run: ccache -C
+
+      - name: Cache the kernel source tree
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.OKCP_WORKDIR || format('{0}/build', github.workspace) }}/src
+          key: ohsrc-${{ matrix.lane }}-${{ github.run_id }}
+          restore-keys: |
+            ohsrc-${{ matrix.lane }}-
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ matrix.lane }}-${{ inputs.toolchain || 'gcc' }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ matrix.lane }}-${{ inputs.toolchain || 'gcc' }}-
+
+      - name: Check the environment
+        run: ./ohos-kb doctor | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Build ${{ matrix.lane }}
+        id: build
+        env:
+          BOARD: ${{ inputs.board }}
+          SYSTEM_TYPE: ${{ inputs.system_type || 'standard' }}
+          TOOLCHAIN: ${{ inputs.toolchain || 'gcc' }}
+        run: |
+          set -euo pipefail
+          args=(all "${{ matrix.lane }}" --cc "$TOOLCHAIN" --type "$SYSTEM_TYPE")
+          [[ -n "$BOARD" ]] && args+=(--board "$BOARD")
+          ./ohos-kb "${args[@]}" 2>&1 | tee build.log
+          # Make the artifact directory predictable for the upload step.
+          {
+            echo "## kernel build: ${{ matrix.lane }}"
+            echo
+            echo '```'
+            tail -40 build.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Collect the artifact manifest
+        if: always()
+        run: |
+          set -euo pipefail
+          wd="${OKCP_WORKDIR:-${{ github.workspace }}/build}"
+          find "$wd/artifacts" -name MANIFEST.txt -exec cat {} \; \
+            > "${{ github.workspace }}/MANIFEST.txt" 2>/dev/null || true
+          cat "${{ github.workspace }}/MANIFEST.txt"
+
+      - name: Upload kernel artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ matrix.lane }}-${{ inputs.toolchain || 'gcc' }}
+          path: ${{ env.OKCP_WORKDIR || format('{0}/build', github.workspace) }}/artifacts/${{ matrix.lane }}/**
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload the build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.lane }}
+          path: |
+            build.log
+            ${{ env.OKCP_WORKDIR || format('{0}/build', github.workspace) }}/artifacts/**/*.log
+          retention-days: 7
+
+      - name: ccache statistics
+        if: always()
+        run: ccache -s | tee -a "$GITHUB_STEP_SUMMARY"

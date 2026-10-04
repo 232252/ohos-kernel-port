@@ -1,0 +1,115 @@
+ohos-kernel-port
+================
+
+Copyright (C) 2026 ohos-kernel-port contributors
+
+SPDX-License-Identifier: GPL-2.0-only
+
+This program is free software; you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation; version 2 of the License.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 51 Franklin
+Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+The full text of the GNU General Public License version 2 is distributed with
+this program in the file LICENSE, byte-for-byte unmodified.
+
+
+-------------------------------------------------------------------------------
+1. Derivation
+-------------------------------------------------------------------------------
+
+ohos-kernel-port is a derivative work.  It is derived from the kernel build
+and packaging system of the ophub project:
+
+    ophub/kernel            https://github.com/ophub/kernel
+    ophub/amlogic-s9xxx-armbian   https://github.com/ophub/amlogic-s9xxx-armbian
+    Copyright (C) 2021 ophub contributors
+    Copyright (C) 2021 https://github.com/unifreq/openwrt_packit
+    Copyright (C) 2021 https://github.com/ophub/kernel
+
+    Licensed under the GNU General Public License, version 2.
+
+The kernel source trees that ophub builds on are maintained by unifreq:
+
+    https://github.com/unifreq/linux-6.6.y  (and 5.10.y, 5.15.y, 6.1.y,
+                                            6.12.y, 6.18.y, 5.10.y-rk35xx,
+                                            6.1.y-rockchip)
+
+    Licensed under GPL-2.0 WITH Linux-syscall-note.
+
+ohos-kernel-port differs from the above as follows.  Per GPL-2.0 section 2(a),
+the modified files carry prominent notices stating the change and its date;
+the substantive changes are:
+
+  * Kernel source acquisition now resolves the OpenHarmony kernel repositories
+    (kernel_linux_6.6, kernel_linux_5.10, kernel_linux_4.19, kernel_linux) on
+    gitcode.com and checks out the matching OpenHarmony-<x.y>-Release branch,
+    instead of resolving unifreq/linux-<series>.y and ophub/linux-<series>.y.
+  * Kernel configuration now consumes the OpenHarmony configuration repository
+    (kernel_linux_config), supporting both OpenHarmony's hand written fragments
+    (base_defconfig, type/{small,standard}_defconfig) and its complete
+    generated per-board configurations, instead of ophub's
+    kernel-config/<board>/config-<version> fragments.
+  * An explicit lane matrix (data/ohos-kernel-lanes.tsv) replaces ophub's
+    implicit series/board resolution, so that every buildable combination of
+    OpenHarmony release branch, kernel version, system type and board is named
+    and reproducible.
+  * Version stamping is off by default.  ophub injects a signature into every
+    kernel it builds; OpenHarmony does not require it, so it is opt-in.
+  * The Armbian / OpenWrt / FnNAS userland integration is removed.  The
+    integration target is the OpenHarmony standard system.
+  * Packaging defaults to producing OpenHarmony boot artifacts and can
+    delegate to the OpenHarmony kernel_linux_build repository.
+
+
+-------------------------------------------------------------------------------
+2. Trademarks
+-------------------------------------------------------------------------------
+
+This project is an independent community project.  It is NOT affiliated with,
+endorsed by, sponsored by, or in any way officially connected to Huawei
+Technologies Co., Ltd., the OpenAtom Open Source Foundation, the OpenHarmony
+project, ophub, unifreq, the Armbian project, or the OpenWrt Project.
+
+OpenHarmony and the OpenHarmony logo are trademarks of the OpenAtom Open
+Source Foundation.  HarmonyOS, Huawei and the Huawei logo are trademarks of
+Huawei Technologies Co., Ltd.  Armbian is a trademark of its respective
+rights holder.  OpenWrt is a trademark of the OpenWrt Project.
+
+All of the above are used here for descriptive purposes only, to identify the
+technologies this project targets.  Their inclusion does not imply any
+endorsement, and no licence to use any of those marks is granted.  This
+project does not reproduce any of those logos or brand identifiers.
+
+
+-------------------------------------------------------------------------------
+3. No additional restrictions
+-------------------------------------------------------------------------------
+
+Pursuant to GPL-2.0 section 6, every recipient automatically receives a
+licence from the original licensors.  This NOTICE imposes no additional
+restrictions on the rights granted under the GPL.  If you redistribute this
+project, keep this file alongside the LICENSE.
+
+
+-------------------------------------------------------------------------------
+4. Components that accompany built artifacts
+-------------------------------------------------------------------------------
+
+Binaries published in this project's GitHub Releases include a MANIFEST.txt
+recording the exact kernel source URL, the OpenHarmony branch, the source
+commit, the toolchain used and the build parameters.  The corresponding
+source is available from the same repository, at the source tag named in the
+release notes, as GPL-2.0 section 3 requires.
+
+Toolchain binaries are NOT redistributed inside boot images or artifacts.
+They are downloaded at build time by CI, and their own licences apply to them
+(see THIRD_PARTY_LICENSES.md).

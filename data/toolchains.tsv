@@ -1,0 +1,37 @@
+# ohos-kernel-port — cross toolchain table
+#
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026 ohos-kernel-port contributors
+#
+# Every row was verified against the GitHub Releases API on 2026-10-04:
+#   curl -fsSL https://api.github.com/repos/ophub/kernel/releases/tags/toolchain
+# The `sha256` column is the `digest` field the API reports for that release
+# asset, so CI can verify a download without trusting a sidecar file.
+#
+# NOTE ON NAMING — this table exists because the asset names are not what you
+# would guess.  The aarch64-host (native) 13.3 tarball is published as
+# `...-aarch64-aarch64-none-elf.tar.xz` (bare-metal triple, no `linux-gnu`);
+# only from 14.2 onward does the aarch64-host build carry `-linux-gnu`.
+# Guessing the name yields an HTTP 404.  Always resolve via this table.
+#
+# Columns (TAB separated):
+#   id             stable identifier for `ohos-kb toolchain use <id>`
+#   arch           target kernel ARCH
+#   host           runner architecture this tarball is built to run on
+#                  (aarch64 = native arm64 runner, x86_64 = cross from amd64)
+#   version        upstream GNU toolchain release series
+#   asset          exact file name in the ophub `toolchain` release
+#   sha256         digest reported by the GitHub Releases API
+#   size_bytes     asset size in bytes (as reported; useful for a size guard)
+#   triple         gcc target triple -> becomes CROSS_COMPILE
+#   cc1            compiler binary, relative to <prefix>/bin/
+#   default        1 = preferred when the caller does not pin an id
+#
+tc-14.2-arm64-cross	arm64	x86_64	14.2.rel1	arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz	47aeefc02b0ee39f6d4d1812110952975542d365872a7474b5306924bca4faa1	152200000	aarch64-linux-gnu	gcc	1
+tc-14.2-arm64-native	arm64	aarch64	14.2.rel1	arm-gnu-toolchain-14.2.rel1-aarch64-aarch64-none-linux-gnu.tar.xz	299c56db1644c135670afabbf801b97a42e5ef6069d73157ab869458cbda2096	153800000	aarch64-none-linux-gnu	gcc	1
+tc-15.2-arm64-cross	arm64	x86_64	15.2.rel1	arm-gnu-toolchain-15.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz	9a685b335bd709d683a8c782253c37e8c36c10e6924e59e39d4769b02132eb43	159200000	aarch64-linux-gnu	gcc	0
+tc-15.2-arm64-native	arm64	aarch64	15.2.rel1	arm-gnu-toolchain-15.2.rel1-aarch64-aarch64-none-linux-gnu.tar.xz	97e3f600c00413088bb21109475443f9a1c57b4f75336a6e820acd43b065f875	152500000	aarch64-none-linux-gnu	gcc	0
+tc-15.3-arm64-cross	arm64	x86_64	15.3.rel1	arm-gnu-toolchain-15.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz	ea12d99f87848009270277afe5d03fac873cb869784a39387183835f743014d9	166800000	aarch64-linux-gnu	gcc	0
+tc-15.3-arm64-native	arm64	aarch64	15.3.rel1	arm-gnu-toolchain-15.3.rel1-aarch64-aarch64-none-linux-gnu.tar.xz	8020be7aa1013704756158400cb5ba438d6f09b2909795d13617b9e7bac53286	159700000	aarch64-none-linux-gnu	gcc	0
+tc-13.3-arm64-cross	arm64	x86_64	13.3.rel1	arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz	322f0b4482fc0d9fa0bb468134841f08d8c554c54ff5aa29a13a7a24bf7e1eb5	144700000	aarch64-linux-gnu	gcc	0
+tc-13.3-arm64-elf	arm64	aarch64	13.3.rel1	arm-gnu-toolchain-13.3.rel1-aarch64-aarch64-none-elf.tar.xz	fad7d567be5c095943d42f7078ea6f9a8452062dfe151152c2ec825814d254e0	93300000	aarch64-none-elf	gcc	0

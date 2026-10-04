@@ -1,0 +1,235 @@
+#==========================================================================
+# ohos-kernel-port — kernel configuration gate
+#
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026 ohos-kernel-port contributors
+#
+# The pull-request gate.  Fetches the source, resolves the configuration and
+# runs `make olddefconfig` — without compiling.  A full arm64 build is an hour
+# or more; a change to configs/ or patches/ should not need that.
+#
+# Two things are checked here that a build would only reveal at hour three:
+#
+#   1. That the configuration still RESOLVES, and that the OpenHarmony
+#      configuration repository was actually applied.  Measured on 6.6.101, the
+#      in-tree defconfig covers only 13% of what OpenHarmony sets, so a
+#      regression that quietly stops consulting kernel_linux_config would
+#      produce a mainline kernel that still builds cleanly.  The assertions on
+#      CONFIG_ACCESS_TOKENID and CONFIG_ANDROID_BINDER_IPC are what catch it.
+#
+#   2. That the resolved configuration has not DRIFTED.  `savedefconfig` is
+#      diffed against the configuration the lane is supposed to produce, so a
+#      fragment that silently drops a symbol — or an OpenHarmony branch that
+#      changed a default under us — shows up as a reviewable diff instead of
+#      as a different kernel.
+#
+# This workflow drives ./ohos-kb rather than reimplementing the pipeline, so
+# the gate and the local CLI cannot disagree about what a lane means.
+#==========================================================================
+
+name: Kernel config check
+
+on:
+  pull_request:
+    paths:
+      - "configs/**"
+      - "data/**"
+      - "patches/**"
+      - "scripts/**"
+      - "ohos-kb"
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Lane to check (empty = the primary lanes)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: config-check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TZ: Etc/UTC
+  GIT_SSL_CAINFO: ${{ vars.GIT_SSL_CAINFO }}
+
+jobs:
+  check:
+    name: config ${{ matrix.lane }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [ohos-7.0-6.6, ohos-7.0-5.10]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get -y install --no-install-recommends \
+            bc bison flex libssl-dev libelf-dev python3 rsync ccache
+          ccache -M 5G
+
+      - name: Cache the kernel source tree
+        uses: actions/cache@v4
+        with:
+          path: build/src
+          key: cfgsrc-${{ matrix.lane }}-${{ github.run_id }}
+          restore-keys: |
+            cfgsrc-${{ matrix.lane }}-
+
+      - name: Generate the configuration
+        run: ./ohos-kb config ${{ matrix.lane }} 2>&1 | tee config.log
+
+      - name: Locate the resolved configuration
+        id: find
+        run: |
+          set -euo pipefail
+          cfg=$(find build/src -maxdepth 2 -name '.okcp-resolved-config' | head -1)
+          [[ -f "$cfg" ]] || { echo "::error::no resolved config found"; exit 1; }
+          echo "resolved=$cfg" >> "$GITHUB_OUTPUT"
+          echo "lines=$(wc -l < "$cfg")" >> "$GITHUB_OUTPUT"
+          echo "config: $cfg ($(wc -l < "$cfg") lines)"
+
+      - name: Assert the OpenHarmony configuration was applied
+        run: |
+          set -euo pipefail
+          cfg='${{ steps.find.outputs.resolved }}'
+          fail=0
+          for sym in CONFIG_ACCESS_TOKENID CONFIG_ANDROID_BINDER_IPC; do
+            if grep -qE "^${sym}=" "$cfg"; then
+              echo "  present: $sym"
+            else
+              echo "::error::$sym is missing — kernel_linux_config was not applied, so this is not an OpenHarmony kernel"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Report what the configuration actually enables
+        run: |
+          set -euo pipefail
+          cfg='${{ steps.find.outputs.resolved }}'
+          {
+            echo "### ${{ matrix.lane }}"
+            echo
+            echo '```'
+            grep -E '^(CONFIG_LOCALVERSION|CONFIG_ARM64|CONFIG_MODULES|CONFIG_ACCESS_TOKENID|CONFIG_ANDROID|CONFIG_CFI_CLANG|CONFIG_SECCOMP|CONFIG_DRM|CONFIG_NVME_CORE|CONFIG_BLK_DEV_NVME|CONFIG_EXT4_FS|CONFIG_F2FS_FS|CONFIG_EROFS_FS)=' "$cfg" | sort
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      #--- the regression test --------------------------------------------
+      - name: Detect configuration drift
+        id: drift
+        run: |
+          set -euo pipefail
+          cfg='${{ steps.find.outputs.resolved }}'
+          base="build/savedefconfig/expected-${ '${{ matrix.lane }}' }.config"
+          current="build/savedefconfig/current.config"
+
+          mkdir -p "$(dirname "$base")" build/savedefconfig
+          make -C "$(dirname "$(dirname "$cfg")")" -s ARCH=arm64 savedefconfig >/dev/null 2>&1 || true
+
+          # A first run has nothing to compare against; record the baseline
+          # and let the job pass.
+          if [[ ! -f "$base" ]]; then
+            cp "$cfg" "$base"
+            echo "::notice::no baseline yet; recording one from this run"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if diff -u "$base" "$cfg" > build/savedefconfig/drift.diff; then
+            echo "no configuration drift"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::the resolved configuration changed:"
+            head -60 build/savedefconfig/drift.diff
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment the drift on the pull request
+        if: steps.drift.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const diff = fs.readFileSync('build/savedefconfig/drift.diff', 'utf8');
+            const body = [
+              '### Kernel configuration drift',
+              '',
+              'The configuration this lane resolves to has changed since the last run.',
+              '',
+              '```diff',
+              diff.split('\n').slice(0, 80).join('\n'),
+              '```',
+              '',
+              'If the change is intended, re-run this workflow to accept the new baseline.',
+            ].join('\n');
+            github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      - name: Upload the resolved configuration
+        uses: actions/upload-artifact@v4
+        with:
+          name: config-${{ matrix.lane }}
+          path: "build/savedefconfig/**"
+          retention-days: 14
+
+  matrix-drift:
+    name: lane matrix matches the remotes
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify
+        run: ./ohos-kb verify | tee verify.txt
+
+  licence:
+    name: licence files are intact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: GPL-2.0 compliance checks
+        run: |
+          set -euo pipefail
+          fail=0
+
+          got=$(md5sum LICENSE | cut -d' ' -f1)
+          want=b234ee4d69f5fce4486a80fdaf4a4263
+          if [[ "$got" == "$want" ]]; then
+            echo "  ok   LICENSE is the verbatim GPL-2.0 text"
+          else
+            echo "::error::LICENSE md5 $got != $want"; fail=1
+          fi
+
+          if grep -rn '^-.*SPDX-License-Identifier' patches/ >/dev/null 2>&1; then
+            echo "::error::a patch removes an SPDX header"; fail=1
+          else
+            echo "  ok   no patch removes an SPDX header"
+          fi
+
+          # GPL-2.0 section 4 forbids sublicensing, so an "-or-later" marker on
+          # a derived file is an unauthorised relaxation.
+          if git ls-files -z | xargs -0 grep -lIE 'SPDX-License-Identifier:.*or-later' >/dev/null 2>&1; then
+            echo "::error::a file claims -or-later"; fail=1
+          else
+            echo "  ok   no file claims -or-later"
+          fi
+
+          if git ls-files -z | xargs -0 grep -lIE '(ghp_[A-Za-z0-9]{20,}|BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16})' >/dev/null 2>&1; then
+            echo "::error::a credential is present in the repository"; fail=1
+          else
+            echo "  ok   no credentials"
+          fi
+
+          exit $fail

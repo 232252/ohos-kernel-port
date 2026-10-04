@@ -1,0 +1,44 @@
+#==========================================================================
+# ohos-kernel-port — self-tests
+#
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026 ohos-kernel-port contributors
+#
+# Runs the driver's logic tests.  No network, no toolchain, a few seconds, so
+# it can gate every push.
+#==========================================================================
+
+name: Self-tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax
+        run: |
+          set -euo pipefail
+          for f in scripts/lib/*.sh tests/run-tests.sh ohos-kb; do
+            bash -n "$f" && echo "  ok   $f"
+          done
+
+      - name: shellcheck
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get -y install -y shellcheck
+          shellcheck -S warning -e SC1091,SC2034 scripts/lib/*.sh ohos-kb tests/run-tests.sh || true
+
+      - name: Run the self-tests
+        run: ./tests/run-tests.sh | tee -a "$GITHUB_STEP_SUMMARY"

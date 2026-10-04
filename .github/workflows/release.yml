@@ -1,0 +1,192 @@
+#==========================================================================
+# ohos-kernel-port — publish a release
+#
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026 ohos-kernel-port contributors
+#
+# Turn a green build into a checksummed GitHub Release whose corresponding
+# source is reachable from the same repository.
+#
+# GPL-2.0 section 3 requires that a recipient of object code can obtain the
+# corresponding source.  A kernel release that ships only `Image` does not
+# satisfy it.  So the most important step in this workflow is not the release:
+# it is tagging the source, and the release is REFUSED if that tag cannot be
+# pushed — otherwise the release would be a section 3 violation by construction.
+#
+# The kernel source itself is not vendored.  Each artifact's MANIFEST.txt
+# already names the exact upstream repository, branch and commit it was built
+# from; that commit is immutable and permanently reachable, which is what makes
+# the "designated place" rule in section 3 satisfiable.
+#==========================================================================
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Lane to release (e.g. ohos-7.0-6.6)"
+        required: true
+      tag:
+        description: "Release tag (e.g. v6.6.101-ohos7-r1)"
+        required: true
+      prerelease:
+        description: "Mark as a prerelease"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      kver: ${{ steps.plan.outputs.kver }}
+      branch: ${{ steps.plan.outputs.branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Confirm the tag matches the lane it claims
+        id: plan
+        run: |
+          set -euo pipefail
+          LANE='${{ inputs.lane }}'
+          TAG='${{ inputs.tag }}'
+
+          # Resolve the lane exactly as the build did, so a release cannot be
+          # labelled with a version the lane does not actually produce.
+          kver=$(./ohos-kb show "$LANE" | awk -F': *' '/^kernel version/{print $2}')
+          branch=$(./ohos-kb show "$LANE" | awk -F': *' '/^OpenHarmony branch/{print $2}')
+          [[ -n "$kver" && "$kver" != "?" ]] || { echo "could not resolve the kernel version for $LANE"; exit 1; }
+
+          echo "lane    : $LANE"
+          echo "kernel  : $kver"
+          echo "branch  : $branch"
+          echo "tag     : $TAG"
+
+          # The tag must start with the version it releases; a mismatch means
+          # someone is about to publish 6.6.101 binaries as 5.10.210.
+          case "$TAG" in
+            v"$kver"*) ;;
+            *) echo "tag '$TAG' does not start with the lane's version v$kver"; exit 1 ;;
+          esac
+
+          echo "kver=$kver"   >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    name: build ${{ inputs.lane }}
+    runs-on: ${{ vars.OKCP_RUNNER || 'ubuntu-24.04-arm' }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc && df -h /
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get -y install --no-install-recommends \
+            bc bison flex libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            ccache python3 rsync zip unzip xz-utils
+          sudo update-ccache symlinks
+          ccache -M 10G
+
+      - name: Build
+        run: ./ohos-kb all '${{ inputs.lane }}' 2>&1 | tee build.log
+
+      - name: Collect the artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp -a "build/artifacts/${{ inputs.lane }}"/. dist/
+          # ship the licence with the binaries: GPL-2.0 section 1 requires
+          # every copy to carry the licence and the warranty disclaimer.
+          cp LICENSE NOTICE THIRD_PARTY_LICENSES.md dist/
+          test -f dist/MANIFEST.txt || { echo "no MANIFEST.txt; refusing to release"; exit 1; }
+          ls -la dist/
+
+      - name: Checksum every artifact
+        run: |
+          set -euo pipefail
+          cd dist
+          find . -type f ! -name SHA256SUMS -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS
+          cat SHA256SUMS
+
+      #--- the section 3 step ---------------------------------------------
+      - name: Push the source tag (required by GPL-2.0 section 3)
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a '${{ inputs.tag }}-src' -m \
+            "Corresponding source for ${{ inputs.tag }} (GPL-2.0 section 3)"
+          git push origin '${{ inputs.tag }}-src'
+
+      - name: Create the release
+        uses: softprops/action-gh-release@v2
+        id: release
+        with:
+          tag_name: ${{ inputs.tag }}
+          prerelease: ${{ inputs.prerelease }}
+          files: dist/*
+          body: |
+            OpenHarmony kernel — lane `${{ inputs.lane }}`
+
+            | | |
+            | --- | --- |
+            | OpenHarmony branch | `${{ needs.plan.outputs.branch }}` |
+            | Kernel version | `${{ needs.plan.outputs.kver }}` |
+            | Source tag | `${{ inputs.tag }}-src` |
+
+            ## Corresponding source
+
+            The build scripts, configuration and patches that produced these
+            binaries are in this repository at tag `${{ inputs.tag }}-src`.
+            The kernel source itself is not vendored; `MANIFEST.txt` in this
+            release names the exact upstream repository, branch and commit,
+            which is immutable and permanently reachable. Together these
+            satisfy the source requirement of the GNU General Public License
+            version 2, section 3.
+
+            ## Licensing
+
+            GPL-2.0-only. `LICENSE` (verbatim GPL-2.0 text) and `NOTICE` are
+            attached to this release. Redistributors must keep them.
+
+            ## A note on boot.img
+
+            An OpenHarmony boot image is not an Android boot image. If
+            `boot.img` is absent, read `boot-img-cmd.txt`: the raw `Image` is
+            here, and finishing the boot image needs OpenHarmony's `img_format`
+            tool, which is not distributed in any public repository. See
+            `docs/BOOT-IMAGE.md`.
+
+      - name: Verify the release is reachable with its source
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "source tag: https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}-src"
+          echo "release   : https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}"
+          # A release whose source tag does not resolve is a section 3
+          # violation; make it loud rather than quiet.
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}-src")
+          echo "source tag HTTP ${code}"
+          if [[ "$code" != "200" ]]; then
+            echo "::error::the corresponding-source tag is not reachable; this release does not satisfy GPL-2.0 section 3"
+            exit 1
+          fi
