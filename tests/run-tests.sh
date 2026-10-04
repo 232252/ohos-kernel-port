@@ -330,11 +330,58 @@ source "${ROOT}/scripts/lib/config.sh"
 
 FIXTURE="${ROOT}/tests/fixtures/fake-kernel"
 CFG_OK=1
+# A concrete file we need anyway, rather than a bare repository endpoint: the
+# latter answers 400 without a path, which would look like an outage.
+ONLINE_PROBE_URL="https://api.gitcode.com/api/v5/repos/openharmony/kernel_linux_config/contents/linux-6.6/base_defconfig?ref=OpenHarmony-7.0-Release"
+
+# Fetch the genuine scripts/kconfig/merge_config.sh from the OpenHarmony
+# kernel tree.  A stub can only ever confirm whatever contract we assume, and
+# assuming it wrong is the bug this section was written to catch — so when the
+# network allows, test against the real script.
+REAL_MERGE=""
+REAL_MERGE_URL="https://api.gitcode.com/api/v5/repos/openharmony/kernel_linux_6.6/contents/scripts/kconfig/merge_config.sh?ref=OpenHarmony-7.0-Release"
+
+# Fetch the genuine scripts/kconfig/merge_config.sh from the OpenHarmony
+# kernel tree.  A stub can only ever confirm whatever contract we assume, and
+# assuming it wrong is the bug this section was written to catch — so when the
+# network allows, test against the real script.
+#
+# Served through the gitcode contents API as base64 rather than a raw URL: the
+# raw host serves an HTML interstitial, which is easy to mistake for the file.
+provision_real_merge() {
+    [[ -n "${REAL_MERGE}" ]] && return 0
+
+    local tmp
+    tmp=$(make_tmpdir)
+    if ! http_get "${REAL_MERGE_URL}" "${tmp}/mc.json" 2>/dev/null; then
+        printf '  !! merge_config.sh download failed\n'
+        rm -rf "${tmp}"; return 1
+    fi
+    if ! python3 -c '
+import base64, json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+blob = base64.b64decode(doc["content"])
+if b"KCONFIG_CONFIG" not in blob or len(blob) < 1000:
+    sys.exit(1)
+open(sys.argv[2], "wb").write(blob)
+' "${tmp}/mc.json" "${tmp}/merge_config.sh" 2>/dev/null; then
+        printf '  !! merge_config.sh decode failed or was not the real script\n'
+        rm -rf "${tmp}"; return 1
+    fi
+
+    chmod +x "${tmp}/merge_config.sh"
+    REAL_MERGE="${tmp}/merge_config.sh"
+    printf '  using the real merge_config.sh (%s bytes)\n' "$(wc -c < "${REAL_MERGE}")"
+}
 
 config_probe() {  # <label> <lane> <expected-lines|-> [ENV=VAL ...]
     local label=$1 lane=$2 want=$3; shift 3
     local work; work=$(make_tmpdir)
     cp -r "${FIXTURE}" "${work}/kernel"
+    if [[ -n "${REAL_MERGE}" ]]; then
+        cp "${REAL_MERGE}" "${work}/kernel/scripts/kconfig/merge_config.sh"
+        chmod +x "${work}/kernel/scripts/kconfig/merge_config.sh"
+    fi
     (
         export OKCP_WORKDIR="${OKCP_WORKDIR:-${work}/build}"
         export "$@"
@@ -356,17 +403,21 @@ config_probe() {  # <label> <lane> <expected-lines|-> [ENV=VAL ...]
 
 if ! have curl; then
     SKIP=$((SKIP+1)); printf '  skip end-to-end config tests (no curl)\n'
-elif ! http_get -o /dev/null "https://gitcode.com/openharmony/kernel_linux_config.git/info/refs?service=git-upload-pack" 2>/dev/null; then
+elif ! have curl || ! curl -fsS --max-time 20 -o /dev/null \
+        "${ONLINE_PROBE_URL}" 2>/dev/null; then
     SKIP=$((SKIP+4))
     printf '  skip end-to-end config tests (cannot reach gitcode; run tests/run-tests.sh --online)\n'
 else
-    # Expected line counts are those of the real OpenHarmony files at
-    # OpenHarmony-7.0-Release, so a layout change upstream shows up here.
-    config_probe "6.6 fragments (base + type/standard)" ohos-7.0-6.6   - OKCP_BOARD=
+    # Expected line counts are those produced by the *real* merge_config.sh
+    # from the real OpenHarmony files at OpenHarmony-7.0-Release, so a layout
+    # change upstream shows up here as a failing count rather than as a
+    # silently different kernel.
+    provision_real_merge || true
+    config_probe "6.6 fragments (base + type/standard)" ohos-7.0-6.6   1349 OKCP_BOARD=
     config_probe "6.6 + rk3568 (complete board config)" ohos-7.0-6.6  6193 OKCP_BOARD=rk3568
-    config_probe "5.10 fragments (type/small)"          ohos-7.0-5.10  - OKCP_BOARD= OKCP_SYSTEM_TYPE=small
-    config_probe "5.10 fragments (type/standard)"       ohos-7.0-5.10  - OKCP_BOARD=
-    config_probe "4.19 legacy layout (arch/arm/configs)" ohos-4.0b1-4.19 - OKCP_ARCH=arm OKCP_BOARD=
+    config_probe "5.10 fragments (type/small)"          ohos-7.0-5.10  843 OKCP_BOARD= OKCP_SYSTEM_TYPE=small
+    config_probe "5.10 fragments (type/standard)"       ohos-7.0-5.10  1348 OKCP_BOARD=
+    config_probe "4.19 legacy layout (arch/arm/configs)" ohos-4.0b1-4.19 3206 OKCP_ARCH=arm OKCP_BOARD=
     config_probe "4.19 + hispark_taurus (complete)"     ohos-4.0b1-4.19 3327 OKCP_ARCH=arm OKCP_BOARD=hispark_taurus
 fi
 

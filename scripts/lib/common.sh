@@ -114,9 +114,20 @@ retry() {
     done
 }
 
-# Sandboxed HTTP GET to stdout, with retries.
+# Sandboxed HTTP GET, with retries.
+#
+#   http_get <url> [out_file]
+#
+# The url comes FIRST.  Writing this as curl-style `http_get -o <out> <url>`
+# silently downloads nothing: -o would be taken as the url, curl would fail or
+# write to the wrong place, and the caller sees a success.  Guard against that
+# rather than trusting every call site to remember.
 http_get() {
-    local url=$1 out=${2:-}
+    local url=${1:-} out=${2:-}
+    case "${url}" in
+        -*) die "http_get takes the url first: http_get <url> [out_file] (got '${url}')" ;;
+    esac
+    [[ -n "${url}" ]] || die "http_get: missing url"
     if [[ -n "${out}" ]]; then
         retry 4 5 curl -fsSL --max-time "${OKCP_HTTP_TIMEOUT:-120}" -o "${out}" "${url}"
     else

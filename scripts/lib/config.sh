@@ -106,17 +106,27 @@ collect_local_fragments() {
 }
 
 #--------------------------------------------------------------- merging
-# _merge_fragments <srcdir> <out_config> <fragment...>
+# _merge_fragments <srcdir> <out_config> <fragment>...
 #
 # Delegates to the kernel's own scripts/kconfig/merge_config.sh so we inherit
-# upstream's conflict handling instead of reimplementing it.
+# upstream's handling of overridden and redundant symbols instead of
+# reimplementing it.
 #
-#   -O <dir>   where merge_config.sh writes its intermediate Kconfig overrides
-#   -m <file>  the merged result, which is what we want
+# Its real contract, read from Linux 6.6.101 scripts/kconfig/merge_config.sh:
 #
-# The merged configuration lands in the -m argument, NOT in <dir>/.config.  An
-# earlier version copied <dir>/.config over the result, silently replacing a
-# real configuration with an empty file.
+#   -m              boolean: merge only, do not run make afterwards
+#   -O <dir>        directory for the generated output; the result is
+#                   <dir>/.config  (it sets KCONFIG_CONFIG accordingly)
+#   <base> <frags>  the first positional is the BASE file, the rest are
+#                   fragments merged over it, later definitions winning
+#
+# There is no "-m <file>".  An earlier version of this function passed one,
+# which made the real script treat the output path as a fragment and leave the
+# real result in the -O directory; a stub that mirrored the invented contract
+# hid the bug until CI met the real one.
+#
+# The script creates its temporary files in the current directory, so it must
+# run with the kernel source tree as cwd.
 _merge_fragments() {
     local srcdir=$1 out=$2; shift 2
     local -a frags=()
@@ -134,14 +144,23 @@ _merge_fragments() {
     fi
 
     local tmp; tmp=$(make_tmpdir)
-    if ! ( cd "${srcdir}" && bash "${merge}" -O "${tmp}" -m "${out}" "${frags[@]}" ); then
+    : > "${tmp}/base.config"          # an empty base keeps ordering explicit
+
+    # -m and -O must stay in this order-free form: the real script consumes -m
+    # as a flag and -O as an argument, so nothing may be glued together.
+    if ! ( cd "${srcdir}" && bash "${merge}" -m -O "${tmp}" "${tmp}/base.config" "${frags[@]}" ); then
         log_warn "merge_config.sh exited non-zero (continuing; olddefconfig will settle it)"
     fi
-    if [[ ! -s "${out}" ]]; then
-        die "config merge produced an empty ${out}
-  fragments: $(printf '%s ' ${frags[@]+"${frags[@]}"})
-  Check that ${merge} exists in the source tree and accepts -O/-m."
+
+    if [[ ! -s "${tmp}/.config" ]]; then
+        log_error "config merge produced no ${tmp}/.config"
+        log_error "  fragments: $(printf '%s ' ${frags[@]+"${frags[@]}"})"
+        log_error "  merge script: ${merge}"
+        rm -rf "${tmp}"
+        die "cannot merge the OpenHarmony configuration fragments"
     fi
+
+    cp "${tmp}/.config" "${out}"
     rm -rf "${tmp}"
     printf '%s\n' "${out}"
 }
