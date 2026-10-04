@@ -33,13 +33,7 @@ patch_series_for_lane() {
         lane_repo "${lane}"; return 0          # linux-6.18.y, linux-5.10.y-rk35xx, ...
     fi
     repo=$(lane_repo "${lane}")
-    kver=$(lane_kver "${lane}")
-    # 6.6.101 -> 6.6 -> linux-6.6.y ;  5.10.210 -> 5.10 -> linux-5.10.y
-    # (strip only the patchlevel; ${kver%%.*} would give "linux-6.y")
-    local mm
-    mm=$(printf '%s\n' "${kver}" | cut -d. -f1,2)
-    [[ "${mm}" == *.* ]] || mm="${kver%%.*}"
-    printf 'linux-%s.y\n' "${mm}"
+    printf 'linux-%s.y\n' "$(kernel_series "$(lane_kver "${lane}")")"
 }
 
 # Collect the patch files that apply to <lane>, in the order they must be run.

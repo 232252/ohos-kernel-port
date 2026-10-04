@@ -59,6 +59,24 @@ lane_url() {
     printf 'https://%s/%s.git\n' "${host}" "$(lane_repo "${id}")"
 }
 
+# The major.minor series token for a lane's kernel version.
+#   6.6.101 -> 6.6      5.10.210 -> 5.10      4.19.155 -> 4.19
+#
+# Both the patch directory name (linux-6.6.y) and the OpenHarmony config
+# directory (kernel_linux_config/linux-6.6/) are keyed on this, so it is
+# derived in exactly one place.
+#
+# Note the subtlety: ${kver%%.*} strips the LONGEST matching suffix and would
+# turn "6.6.101" into "6", which makes every config and patch lookup miss and
+# fall back silently.  Strip only the patchlevel instead.
+kernel_series() {
+    local kver=$1 series
+    series=$(printf '%s\n' "${kver}" | cut -d. -f1,2)
+    # A single-component version has no series; fall back to itself.
+    [[ "${series}" == *.* ]] || series="${kver%%.*}"
+    printf '%s\n' "${series}"
+}
+
 # All lane ids, in matrix order.
 lane_ids() {
     awk -F'\t' '/^#/ { next } NF >= 8 { print $1 }' "${OKCP_LANES_FILE}"

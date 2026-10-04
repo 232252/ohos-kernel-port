@@ -148,23 +148,42 @@ generate_config() {
 
     #-- layers 1-2: the OpenHarmony config repo -------------------------
     elif [[ "$(lane_source_kind "${lane}")" == "ohos" && -z "${OKCP_NO_OHOS_CONFIG:-}" ]]; then
-        local cfgroot kver base_def type_def board_def
-        kver=$(lane_kver "${lane}"); kver="${kver%%.*}"
+        local cfgroot series base_def type_def board_def
+        series=$(kernel_series "$(lane_kver "${lane}")")
         cfgroot=$(fetch_ohos_config_repo "${lane}")
 
-        base_def="${cfgroot}/linux-${kver}/base_defconfig"
-        type_def="${cfgroot}/linux-${kver}/type/${OKCP_SYSTEM_TYPE}_defconfig"
-        board_def=""
-        if [[ -n "${OKCP_BOARD}" && -d "${cfgroot}/linux-${kver}/${OKCP_BOARD}" ]]; then
-            board_def="${cfgroot}/linux-${kver}/${OKCP_BOARD}/arch/${arch}_defconfig"
+        # OpenHarmony's config repository uses two conventions.
+        #
+        #   modern (5.10, 6.6):
+        #     linux-<s>/base_defconfig
+        #     linux-<s>/type/{standard,small}_defconfig
+        #     linux-<s>/<board>/arch/<arch>_defconfig        (complete)
+        #
+        #   legacy (4.19):  no base layer, and everything sits under arch/
+        #     linux-4.19/arch/<arch>/configs/{standard,small}_common_defconfig
+        #     linux-4.19/arch/<arch>/configs/<board>_<type>_defconfig
+        #
+        # Try the modern layout first, then the legacy one, so a lane against
+        # either generation resolves.
+        if [[ -f "${cfgroot}/linux-${series}/base_defconfig" \
+           || -f "${cfgroot}/linux-${series}/type/${OKCP_SYSTEM_TYPE}_defconfig" ]]; then
+            base_def="${cfgroot}/linux-${series}/base_defconfig"
+            type_def="${cfgroot}/linux-${series}/type/${OKCP_SYSTEM_TYPE}_defconfig"
+            [[ -n "${OKCP_BOARD}" && -d "${cfgroot}/linux-${series}/${OKCP_BOARD}" ]] && \
+                board_def="${cfgroot}/linux-${series}/${OKCP_BOARD}/arch/${arch}_defconfig"
+        else
+            local legacy="${cfgroot}/linux-${series}/arch/${arch}/configs"
+            type_def="${legacy}/${OKCP_SYSTEM_TYPE}_common_defconfig"
+            [[ -n "${OKCP_BOARD}" ]] && board_def="${legacy}/${OKCP_BOARD}_${OKCP_SYSTEM_TYPE}_defconfig"
+            base_def=""
         fi
 
         if [[ -n "${board_def}" && -f "${board_def}" ]] && config_is_full "${board_def}"; then
             log_step "config: complete OpenHarmony board config for '${OKCP_BOARD}'"
-            base_desc="kernel_linux_config linux-${kver}/${OKCP_BOARD} (complete)"
+            base_desc="kernel_linux_config linux-${series}/${OKCP_BOARD} (complete)"
             mode="full"; cp "${board_def}" "${out}"
         elif [[ -f "${base_def}" || -f "${type_def}" ]]; then
-            log_step "config: OpenHarmony config repo (linux-${kver}, type/${OKCP_SYSTEM_TYPE})"
+            log_step "config: OpenHarmony config repo (linux-${series}, type/${OKCP_SYSTEM_TYPE})"
             [[ -f "${base_def}" ]] && frags+=("${base_def}")
             [[ -f "${type_def}" ]] && frags+=("${type_def}")
             [[ -f "${board_def}" ]] && frags+=("${board_def}")

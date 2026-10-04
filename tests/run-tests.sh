@@ -311,6 +311,33 @@ for f in docs/VERSION-MATRIX.md docs/PORTING-NOTES.md docs/BOOT-IMAGE.md docs/CO
 done
 
 #==============================================================================
+section "version → path derivation"
+#==============================================================================
+
+# ${kver%%.*} strips the LONGEST matching suffix, so "6.6.101" becomes "6".
+# That single character made every config and patch lookup miss and fall back
+# to the in-tree defconfig, which CI caught as a silent 13%-coverage config.
+# The derivation now lives in one place; these pin it.
+assert_eq "6.6.101 derives the 6.6 series"    "6.6"    "$(kernel_series 6.6.101)"
+assert_eq "5.10.210 derives the 5.10 series"  "5.10"   "$(kernel_series 5.10.210)"
+assert_eq "4.19.155 derives the 4.19 series"  "4.19"   "$(kernel_series 4.19.155)"
+assert_eq "5.10.57 derives the 5.10 series"   "5.10"   "$(kernel_series 5.10.57)"
+assert_eq "6.6.22 derives the 6.6 series"    "6.6"    "$(kernel_series 6.6.22)"
+
+# Every OpenHarmony lane must derive a series, and it must have two components:
+# one component is exactly the failure mode above.
+bad_series=0
+while IFS=$'\t' read -r id kind repo host branch kver overlay status note; do
+    [[ -z "${id}" || "${id}" == \#* ]] && continue
+    s=$(kernel_series "${kver}")
+    if [[ "${s}" != *.* ]]; then
+        printf '  lane %s: version %s derives the malformed series "%s"\n' "${id}" "${kver}" "${s}"
+        bad_series=$((bad_series+1))
+    fi
+done < "${OKCP_LANES_FILE}"
+assert_eq "every lane derives a well-formed series" "0" "${bad_series}"
+
+#==============================================================================
 section "regressions"
 #==============================================================================
 
