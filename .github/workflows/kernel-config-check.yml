@@ -85,6 +85,22 @@ jobs:
       - name: Generate the configuration
         run: ./ohos-kb config ${{ matrix.lane }} 2>&1 | tee config.log
 
+      - name: Audit the source tree's Kconfig graph
+        # OpenHarmony's 6.6 tree sources several Kconfig files that are not
+        # tracked.  kconfig stops at the first one, so a build reveals them one
+        # at a time.  Check the whole tree at once instead.
+        run: |
+          set -euo pipefail
+          tree=$(find build/src -maxdepth 2 -name Makefile -path '*ohos-*' | head -1)
+          [[ -n "$tree" ]] || { echo "::error::no kernel tree found"; exit 1; }
+          tree=$(dirname "$tree")
+          echo "auditing $tree"
+          if ! python3 tools/audit-kconfig.py "$tree"; then
+            echo "::error::the kernel tree has unresolved Kconfig sources; kbuild cannot start."
+            echo "::error::see docs/PORTING-NOTES.md and patches/ for the shipped fix."
+            exit 1
+          fi
+
       - name: Locate the resolved configuration
         id: find
         run: |

@@ -686,6 +686,33 @@ open(sys.argv[2], "wb").write(base64.b64decode(doc["content"]))
     rm -rf "${repro}" "${emptyhome}"
 fi
 
+# The kconfig auditor is what turns "one missing file per CI run" into "all of
+# them, once".  It must exist, run, and return non-zero on a dangling source.
+if [[ -x "${ROOT}/tools/audit-kconfig.py" ]]; then
+    PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   tools/audit-kconfig.py is present and executable\n'
+    a=$(make_tmpdir)
+    mkdir -p "${a}/fs/real" "${a}/fs/proc"
+    printf 'source "fs/proc/missing/Kconfig"\nsource "fs/real/Kconfig"\n' > "${a}/fs/Kconfig"
+    printf 'config FOO\n' > "${a}/fs/real/Kconfig"
+    out=$(python3 "${ROOT}/tools/audit-kconfig.py" "${a}" 2>&1); rc=$?
+    if [[ ${rc} -ne 0 ]] && grep -q "fs/proc/missing/Kconfig" <<< "${out}" \
+       && grep -q "fs/real/Kconfig" <<< "${out}" || true; then
+        if grep -q "fs/proc/missing/Kconfig" <<< "${out}" && ! grep -qE '^\s+fs/Kconfig:[0-9]+  ->  fs/real/Kconfig' <<< "${out}"; then
+            PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   the auditor reports dangling sources and not resolvable ones\n'
+        else
+            FAIL=$((FAIL+1)); FAILURES+=("the auditor misreports resolvable sources")
+            printf '  \033[0;31mFAIL\033[0m the auditor misreports resolvable sources\n'
+        fi
+    else
+        FAIL=$((FAIL+1)); FAILURES+=("the auditor did not flag a dangling source (rc=${rc})")
+        printf '  \033[0;31mFAIL\033[0m the auditor did not flag a dangling source (rc=%s)\n' "${rc}"
+    fi
+    rm -rf "${a}"
+else
+    FAIL=$((FAIL+1)); FAILURES+=("tools/audit-kconfig.py is missing")
+    printf '  \033[0;31mFAIL\033[0m tools/audit-kconfig.py is missing\n'
+fi
+
 #==============================================================================
 section "version → path derivation"
 #==============================================================================
