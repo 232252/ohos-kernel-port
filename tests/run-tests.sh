@@ -634,24 +634,19 @@ assert_eq "no patch removes an SPDX header" "0" "${spdx_removed}"
 # require the patch to apply.
 patch_apply_out=""
 if [[ ${patch_count} -gt 0 ]] && have git; then
-    # Fetch the real pre-image from the OpenHarmony tree, so this exercises the
-    # shipped patch against the files it was written for rather than a stub.
+    # Fetch the real pre-image of every file the shipped patch touches, so this
+    # exercises the patch against what it was written for rather than a stub.
     repro=$(make_tmpdir)
     emptyhome=$(make_tmpdir)
-    mkdir -p "${repro}/fs/proc"
     got_real=1
-    for p in fs/Kconfig fs/proc/Makefile; do
+    for f in fs/Kconfig fs/proc/Makefile security/Kconfig security/Makefile; do
         if ! http_get \
-            "https://api.gitcode.com/api/v5/repos/openharmony/kernel_linux_6.6/contents/${p}?ref=OpenHarmony-7.0-Release" \
-            "${repro}/${p}.json" 2>/dev/null \
-           || ! python3 -c '
-import base64, json, sys
-doc = json.load(open(sys.argv[1], encoding="utf-8"))
-open(sys.argv[2], "wb").write(base64.b64decode(doc["content"]))
-' "${repro}/${p}.json" "${repro}/${p}" 2>/dev/null; then
+            "https://api.gitcode.com/api/v5/repos/openharmony/kernel_linux_6.6/contents/${f}?ref=OpenHarmony-7.0-Release" \
+            "${repro}/blob.json" 2>/dev/null \
+           || ! python3 "${HERE}/decode-blob.py" "${repro}/blob.json" "${repro}/${f}"; then
+            printf '  (could not fetch %s)\n' "${f}"
             got_real=0; break
         fi
-        rm -f "${repro}/${p}.json"
     done
     if [[ ${got_real} -eq 0 ]]; then
         SKIP=$((SKIP+1))
@@ -662,7 +657,7 @@ open(sys.argv[2], "wb").write(base64.b64decode(doc["content"]))
         if patch_apply_out=$(env -i PATH="${PATH}" HOME="${emptyhome}" bash -c '
                 set -uo pipefail
                 cd "'"${repro}"'" || exit 1
-                # a runner with no identity at all
+                # a runner with no git identity at all
                 git config --local --unset-all user.email 2>/dev/null
                 git config --local --unset-all user.name 2>/dev/null
                 source "'"${ROOT}"'/scripts/lib/common.sh" 2>/dev/null
@@ -670,12 +665,35 @@ open(sys.argv[2], "wb").write(base64.b64decode(doc["content"]))
                 source "'"${ROOT}"'/scripts/lib/patch.sh" 2>/dev/null
                 apply_patches ohos-7.0-6.6 "'"${repro}"'" "'"${ROOT}"'/patches"
             ' 2>&1); then
-            # and confirm it actually did something
-            if grep -qE 'source "fs/(proc/memory_security|code_sign|dec)/Kconfig"' "${repro}/fs/Kconfig" 2>/dev/null; then
-                printf '  \033[0;31mFAIL\033[0m the patch applied but the dangling references remain\n'
-                FAIL=$((FAIL+1)); FAILURES+=("patch applied but did not remove the dangling sources")
+            problems=0
+            # (a) every dangling source the audit found must be gone
+            for t in fs/proc/memory_security/Kconfig fs/code_sign/Kconfig fs/dec/Kconfig \
+                     security/xpm/Kconfig security/container_escape_detection/Kconfig; do
+                if grep -qF "source \"${t}\"" "${repro}/fs/Kconfig" "${repro}/security/Kconfig" 2>/dev/null; then
+                    printf '        still referenced: %s\n' "${t}"; problems=$((problems+1))
+                fi
+            done
+            # (b) every symbol kernel_linux_config sets from one of them must
+            #     still be definable, or a configuration silently loses it
+            for sym in MEMORY_SECURITY SECURITY_XPM SECURITY_XPM_DEBUG; do
+                if ! grep -rqE "^config ${sym}\$" "${repro}/fs/proc/memory_security/Kconfig" \
+                                          "${repro}/security/xpm/Kconfig" 2>/dev/null; then
+                    printf '        symbol no longer definable: %s\n' "${sym}"; problems=$((problems+1))
+                fi
+            done
+            # (c) the obj-/subdir- hooks must be gone, or the link stage fails next
+            for m in "${repro}/fs/proc/Makefile" "${repro}/security/Makefile"; do
+                if grep -qE 'obj-\\\$\(CONFIG_(MEMORY_SECURITY|SECURITY_XPM|SECURITY_CONTAINER_ESCAPE_DETECTION)\)|subdir-\\\$\(CONFIG_SECURITY_CONTAINER_ESCAPE_DETECTION\)' "${m}" 2>/dev/null; then
+                    printf '        obj-/subdir- hook still present in %s\n' "${m#"${repro}"/}"
+                    problems=$((problems+1))
+                fi
+            done
+            if [[ ${problems} -eq 0 ]]; then
+                PASS=$((PASS+1))
+                printf '  \033[0;32mok\033[0m   the patch clears all 5 dangling sources, keeps their symbols, drops their build hooks\n'
             else
-                PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   the patch applies to the real tree with no git identity\n'
+                FAIL=$((FAIL+1)); FAILURES+=("the patch left ${problems} dangling-source issue(s)")
+                printf '  \033[0;31mFAIL\033[0m the patch left %s issue(s)\n' "${problems}"
             fi
         else
             FAIL=$((FAIL+1)); FAILURES+=("apply_patches failed against the real tree with no git identity")

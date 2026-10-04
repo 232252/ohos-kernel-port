@@ -36,14 +36,33 @@ import sys
 # source, rsource, osource — the three forms kconfig accepts.
 SOURCE_RE = re.compile(r'^\s*(?:o|r|)?source\s+"(?P<path>[^"]+)"', re.M)
 
+# kconfig expands $(VAR) in source paths.  The arch top-level Kconfig uses
+# $(SRCARCH); a path that is not resolved here is reported separately rather
+# than as a false positive, because "cannot judge" and "does not exist" are
+# different answers.
+VAR_RE = re.compile(r'\$\((?P<name>[A-Za-z_][A-Za-z0-9_]*)\)')
+
+# Values for the variables kconfig itself predefines that appear in source
+# paths.  An empty map means such a path is reported as UNRESOLVED.
+KCONFIG_VARS = {
+    "SRCARCH": "",   # set by the caller via --srcarch
+}
+
 # Kconfig files can be named Kconfig, Kconfig.* or be a directory's Kconfig.
 def is_kconfig(path):
     base = os.path.basename(path)
     return base == "Kconfig" or base.startswith("Kconfig.")
 
 
-def audit(root):
-    """Return (dangling, checked) where dangling is a list of dicts."""
+def audit(root, srcarch=None):
+    """Return (dangling, unresolved, checked).
+
+    dangling  -- source targets that are definitely absent
+    unresolved -- targets containing a $(VAR) we cannot expand, so no verdict
+    """
+    kconfig_vars = dict(KCONFIG_VARS)
+    if srcarch:
+        kconfig_vars["SRCARCH"] = srcarch
     tracked = set()
     kconfigs = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -57,6 +76,7 @@ def audit(root):
                 kconfigs.append((rel, full))
 
     dangling = []
+    unresolved = []
     for rel, full in sorted(kconfigs):
         try:
             with open(full, "r", encoding="utf-8", errors="replace") as fh:
@@ -66,13 +86,22 @@ def audit(root):
         for m in SOURCE_RE.finditer(text):
             target = m.group("path")
             line = text.count("\n", 0, m.start()) + 1
-            if target not in tracked:
+            # expand $(VAR) so arch/$(SRCARCH)/Kconfig is judged properly
+            def _sub(mo):
+                return kconfig_vars.get(mo.group("name"), "")
+            expanded = VAR_RE.sub(_sub, target)
+            if "\n" in expanded:
+                expanded = target
+            if VAR_RE.search(expanded):
+                unresolved.append({"from": rel, "line": line, "target": target})
+                continue
+            if expanded not in tracked:
                 dangling.append({
                     "from": rel,
                     "line": line,
                     "target": target,
                 })
-    return dangling, len(kconfigs)
+    return dangling, unresolved, len(kconfigs)
 
 
 def main(argv):
@@ -86,19 +115,27 @@ def main(argv):
     as_json = "--json" in argv
     quiet = "--quiet" in argv
 
-    dangling, nkconfig = audit(root)
+    srcarch = None
+    for i, a in enumerate(argv):
+        if a == "--srcarch" and i + 1 < len(argv):
+            srcarch = argv[i + 1]
+    dangling, unresolved, nkconfig = audit(root, srcarch)
 
     if as_json:
         print(json.dumps({
             "root": root,
             "kconfig_files": nkconfig,
             "dangling": dangling,
+            "unresolved": unresolved,
             "count": len(dangling),
         }, indent=2))
         return 1 if dangling else 0
 
+    if unresolved:
+        print(f"note  {len(unresolved)} source path(s) could not be resolved "
+              f"(contain \$(VAR)); pass --srcarch where relevant\n")
     if not dangling:
-        print(f"OK  {nkconfig} Kconfig files checked, every source resolves")
+        print(f"OK  {nkconfig} Kconfig files checked, every resolvable source exists")
         return 0
 
     print(f"DANGLING  {len(dangling)} unresolved Kconfig source(s) in {nkconfig} Kconfig files\n")
