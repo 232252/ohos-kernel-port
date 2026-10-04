@@ -71,16 +71,34 @@ apply_patches() {
     git_do -C "${srcdir}" rev-parse --git-dir >/dev/null 2>&1 || \
         die "patch application requires a git checkout; ${srcdir} is not one"
 
+    # `git am` creates a commit, and a commit needs a committer identity.  A
+    # fresh CI runner has none: actions/checkout sets no user.name/user.email,
+    # so git fails with "Committer identity unknown" — which reads like a patch
+    # conflict and is not one.  Supply a fallback rather than requiring every
+    # environment to be configured, and never override an identity already set.
+    local -a ident=()
+    if ! git_do -C "${srcdir}" config --get user.email >/dev/null 2>&1; then
+        ident=(-c "user.name=ohos-kernel-port" -c "user.email=ohos-kernel-port@localhost")
+        log_debug "no git identity in the tree; using the project fallback"
+    fi
+
     for p in "${patches[@]}"; do
-        local rel=${p#"${srcdir}/"}
-        if git_do -C "${srcdir}" am --3way --keep-non-patch "${p}" >>"${srcdir}/.okcp-patch.log" 2>&1; then
+        local rel=${p#"${srcdir}/"} out
+        # Capture the output rather than redirecting it to a file: a CI
+        # runner's scratch tree is unreachable afterwards, so a failure has to
+        # print its own diagnosis instead of pointing at a file nobody can open.
+        if out=$(git_do -C "${srcdir}" "${ident[@]}" am --3way --keep-non-patch "${p}" 2>&1); then
             log_debug "applied: ${rel}"
-            applied=$((applied + 1))
+            applied=$((applied+1))
         else
+            failed=$((failed+1))
             log_error "patch FAILED: ${rel}"
-            log_error "  conflict log: ${srcdir}/.okcp-patch.log"
-            log_error "  resolve with:  git -C ${srcdir} am --abort && git -C ${srcdir} am --3way ${p}"
-            failed=$((failed + 1))
+            log_error "--- git am output ---"
+            printf '%s\n' "${out}" | sed 's/^/    /' >&2
+            log_error "------------------------"
+            log_error "  recover: git -C ${srcdir} am --abort"
+            log_error "  retry:   git -C ${srcdir} am --3way ${p}"
+            printf '%s\n' "${out}" > "${srcdir}/.okcp-patch.log" 2>/dev/null || true
             break
         fi
     done

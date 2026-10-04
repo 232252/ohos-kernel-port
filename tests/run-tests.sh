@@ -627,6 +627,65 @@ assert_eq "every patch is a well-formed mail patch" "0" "${patch_bad}"
 spdx_removed=$(grep -rlE '^-.*SPDX-License-Identifier' "${ROOT}/patches" 2>/dev/null | wc -l)
 assert_eq "no patch removes an SPDX header" "0" "${spdx_removed}"
 
+# `git am` commits, so it needs a committer identity.  A fresh CI runner has
+# none — actions/checkout sets no user.name/user.email — and git then fails
+# with "unable to auto-detect email address", which reads exactly like a patch
+# conflict.  This was the tenth CI failure.  Reproduce the clean environment and
+# require the patch to apply.
+patch_apply_out=""
+if [[ ${patch_count} -gt 0 ]] && have git; then
+    # Fetch the real pre-image from the OpenHarmony tree, so this exercises the
+    # shipped patch against the files it was written for rather than a stub.
+    repro=$(make_tmpdir)
+    emptyhome=$(make_tmpdir)
+    mkdir -p "${repro}/fs/proc"
+    got_real=1
+    for p in fs/Kconfig fs/proc/Makefile; do
+        if ! http_get \
+            "https://api.gitcode.com/api/v5/repos/openharmony/kernel_linux_6.6/contents/${p}?ref=OpenHarmony-7.0-Release" \
+            "${repro}/${p}.json" 2>/dev/null \
+           || ! python3 -c '
+import base64, json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+open(sys.argv[2], "wb").write(base64.b64decode(doc["content"]))
+' "${repro}/${p}.json" "${repro}/${p}" 2>/dev/null; then
+            got_real=0; break
+        fi
+        rm -f "${repro}/${p}.json"
+    done
+    if [[ ${got_real} -eq 0 ]]; then
+        SKIP=$((SKIP+1))
+        printf '  skip patch-apply test (cannot fetch the real OpenHarmony files)\n'
+    else
+        ( cd "${repro}" && git init -q . && git add -A \
+          && git -c user.email=t@t -c user.name=t commit -qm "OHOS baseline" ) >/dev/null 2>&1
+        if patch_apply_out=$(env -i PATH="${PATH}" HOME="${emptyhome}" bash -c '
+                set -uo pipefail
+                cd "'"${repro}"'" || exit 1
+                # a runner with no identity at all
+                git config --local --unset-all user.email 2>/dev/null
+                git config --local --unset-all user.name 2>/dev/null
+                source "'"${ROOT}"'/scripts/lib/common.sh" 2>/dev/null
+                source "'"${ROOT}"'/scripts/lib/matrix.sh" 2>/dev/null
+                source "'"${ROOT}"'/scripts/lib/patch.sh" 2>/dev/null
+                apply_patches ohos-7.0-6.6 "'"${repro}"'" "'"${ROOT}"'/patches"
+            ' 2>&1); then
+            # and confirm it actually did something
+            if grep -qE 'source "fs/(proc/memory_security|code_sign|dec)/Kconfig"' "${repro}/fs/Kconfig" 2>/dev/null; then
+                printf '  \033[0;31mFAIL\033[0m the patch applied but the dangling references remain\n'
+                FAIL=$((FAIL+1)); FAILURES+=("patch applied but did not remove the dangling sources")
+            else
+                PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   the patch applies to the real tree with no git identity\n'
+            fi
+        else
+            FAIL=$((FAIL+1)); FAILURES+=("apply_patches failed against the real tree with no git identity")
+            printf '  \033[0;31mFAIL\033[0m patches do not apply with no git identity:\n'
+            printf '%s\n' "${patch_apply_out}" | tail -8 | sed 's/^/        /'
+        fi
+    fi
+    rm -rf "${repro}" "${emptyhome}"
+fi
+
 #==============================================================================
 section "version → path derivation"
 #==============================================================================
