@@ -163,7 +163,80 @@ When OpenHarmony lands the real subsystems, drop the patch: the files and the
 `obj-` lines will exist, and `ohos-kb` will report that the patch no longer
 applies rather than silently mis-building.
 
-## 5a. The same tree is also missing a header
+## 5a. The 6.6 tree is missing headers that the 5.10 tree has
+
+This is the finding that decided which lane to release first.
+
+With the Kconfig graph fixed, kconfig runs to completion — the resolved
+configuration goes from 1349 lines to a full **5812** — and the compile then
+stops on headers:
+
+```
+CC      arch/arm64/kernel/asm-offsets.s
+include/linux/mm_types.h:22:10: fatal error: linux/xpm_types.h: No such file or directory
+include/linux/memcontrol.h:24:10: fatal error: linux/memcg_policy.h: No such file or directory
+```
+
+Checked against `kernel_linux_5.10` at the same release branch:
+
+| header | 6.6 tree | 5.10 tree |
+| --- | --- | --- |
+| `include/linux/xpm_types.h` | absent | **present** |
+| `include/linux/memcg_policy.h` | absent | **present** |
+| `include/linux/mm_purgeable.h` | absent | **present** |
+| the five dangling Kconfig sources | all five | all five |
+
+So the two trees differ in exactly this way: the 5.10 tree is complete on
+headers, the 6.6 tree is not. That is what `patches/linux-6.6.y/020`, `030` and
+`050` are for, and **they are not invented** — each is the file from
+OpenHarmony's own 5.10 tree, with two adjustments: the SPDX tag is narrowed from
+GPL-2.0 / GPL-2.0-or-later to GPL-2.0-only to match the 6.6 tree (GPL-2.0 §4
+forbids relicensing), and the `CONFIG_HYPERHOLD_*` guards in `memcg_policy.h`
+are dropped because 6.6 reaches those fields unconditionally.
+
+That matters. `struct xpm_region` is embedded by value in `mm_struct` and
+`struct memcg_reclaim` in `mem_cgroup`, so a guessed layout would have produced
+a kernel that compiled and was subtly wrong. `struct xpm_region` turned out to
+be two `unsigned long`s, `addr_start` and `addr_end`.
+
+**Consequence for the release target.** The 5.10 lane needs one patch
+(`patches/linux-5.10.y/010`, the Kconfig fix) and the 6.6 lane needs five, so
+`ohos-7.0-5.10` is now the primary lane and the first release target. That is
+also the more faithful choice on its own terms: 5.10 is the LTS kernel
+OpenHarmony 7.0 actually ships on devices, and the manifest pins both trees.
+
+`CONFIG_MEM_PURGEABLE` is set by `type/standard_defconfig` and by the rk3568
+board configuration, and `mm/purgeable.c` is present in the tree while its
+header is not, so `mm_purgeable.h` is needed rather than optional.
+
+## 5b. A second arity bug in the same file
+
+The first compile error was
+
+```
+include/linux/page-flags.h:519:27: error: macro "PAGEFLAG_FALSE" requires 2
+    arguments, but only 1 given
+  519 | PAGEFLAG_FALSE(XPMReadonly)
+```
+
+`PAGEFLAG_FALSE` takes `(uname, lname)`, and the `#ifdef` branch three lines
+above uses `PAGEFLAG(XPMReadonly, xpm_readonly, PF_HEAD)`. The preprocessor
+does not expand a call with the wrong arity, so the token is left where a
+declaration belongs and the errors cascade.
+
+There is a second instance further down that the compiler had not reached
+because the first one stopped the build:
+
+```
+include/linux/page-flags.h:660: PAGEFLAG_FALSE(Purgeable)
+```
+
+under `CONFIG_MEM_PURGEABLE`, which the OpenHarmony configuration does set.
+Both are fixed in `patches/linux-6.6.y/040`. The lesson is the same as the
+missing headers: once one error is fixed, the next one is often already
+visible, and reading the file beats waiting for a compiler to find it.
+
+## 5c. The same tree is also missing a header
 
 With the Kconfig graph fixed, kconfig runs to completion — the resolved
 configuration goes from 1349 lines to a full **5812** — and the compile then

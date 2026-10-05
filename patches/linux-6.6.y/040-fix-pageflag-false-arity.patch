@@ -1,0 +1,74 @@
+From 411775f42a73da4ecbc8643c6145c783a1aa8b65 Mon Sep 17 00:00:00 2001
+From: ohos-kernel-port contributors <232252@users.noreply.github.com>
+Date: Mon, 5 Oct 2026 08:29:34 +0800
+Subject: [PATCH] mm: pass both arguments to PAGEFLAG_FALSE for two page flags
+
+SPDX-License-Identifier: GPL-2.0-only
+
+Baseline: gitcode.com/openharmony/kernel_linux_6.6
+Branch:   OpenHarmony-7.0-Release
+Commit:   f4b61510491aa20f7f57fbbc5efc754083c92212
+
+    include/linux/page-flags.h:519:27: error: macro "PAGEFLAG_FALSE"
+        requires 2 arguments, but only 1 given
+      519 | PAGEFLAG_FALSE(XPMReadonly)
+    include/linux/page-flags.h:520:31: error: macro "PAGEFLAG_FALSE"
+        requires 2 arguments, but only 1 given
+      520 | PAGEFLAG_FALSE(XPMWritetainted)
+    include/linux/page-flags.h:519:1: error: unknown type name 'PAGEFLAG_FALSE'
+    include/linux/page-flags.h:520:15: error: expected ';' before 'static'
+
+PAGEFLAG_FALSE takes (uname, lname), and every other call site in the file
+passes both.  The #ifdef branch three lines above uses
+PAGEFLAG(XPMReadonly, xpm_readonly, PF_HEAD), and two lines above the second
+one PAGEFLAG_FALSE(VmemmapSelfHosted, vmemmap_self_hosted) is correct.  The
+preprocessor does not expand a call with the wrong arity, so the token is left
+where a declaration belongs and the errors cascade.
+
+There is a second instance of the same mistake, further down, which the
+compiler had not reached when the first one stopped the build:
+
+    include/linux/page-flags.h:660: PAGEFLAG_FALSE(Purgeable)
+
+under CONFIG_MEM_PURGEABLE, whose #ifdef branch is
+PAGEFLAG(Purgeable, purgeable, PF_ANY).  Both are fixed here so the #else
+branches compile in any configuration.  kernel_linux_config's
+type/standard_defconfig and the rk3568 board configuration do set
+CONFIG_MEM_PURGEABLE, so the Purgeable one is reachable in practice.
+
+The lower-case names are the ones the corresponding #ifdef branches already use
+for the same flags, so the two branches stay consistent.
+
+Upstream: no equivalent; these lines are not part of Linux v6.6.
+Licence: GPL-2.0-only, same as the tree.
+---
+ include/linux/page-flags.h | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/include/linux/page-flags.h b/include/linux/page-flags.h
+index aa37e68..c4069e8 100644
+--- a/include/linux/page-flags.h
++++ b/include/linux/page-flags.h
+@@ -516,8 +516,8 @@ PAGEFLAG(Checked, checked, PF_NO_COMPOUND)	   /* Used by some filesystems */
+ PAGEFLAG(XPMReadonly, xpm_readonly, PF_HEAD)
+ PAGEFLAG(XPMWritetainted, xpm_writetainted, PF_HEAD)
+ #else
+-PAGEFLAG_FALSE(XPMReadonly)
+-PAGEFLAG_FALSE(XPMWritetainted)
++PAGEFLAG_FALSE(XPMReadonly, xpm_readonly)
++PAGEFLAG_FALSE(XPMWritetainted, xpm_writetainted)
+ #endif
+ 
+ /* Xen */
+@@ -657,7 +657,7 @@ PAGEFLAG_FALSE(VmemmapSelfHosted, vmemmap_self_hosted)
+ #ifdef CONFIG_MEM_PURGEABLE
+ PAGEFLAG(Purgeable, purgeable, PF_ANY)
+ #else
+-PAGEFLAG_FALSE(Purgeable)
++PAGEFLAG_FALSE(Purgeable, purgeable)
+ #endif
+ 
+ /*
+-- 
+2.39.5
+

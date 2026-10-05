@@ -1,77 +1,100 @@
-From 5695af68a7379efbaa05a5da9f76bc464debf024 Mon Sep 17 00:00:00 2001
+From e8bb053159f648b68ad39df35b52f832ccafba23 Mon Sep 17 00:00:00 2001
 From: ohos-kernel-port contributors <232252@users.noreply.github.com>
-Date: Mon, 5 Oct 2026 00:50:28 +0800
-Subject: [PATCH] include: add the missing memcg_policy.h so memcontrol.h can
- be compiled
+Date: Mon, 5 Oct 2026 08:29:34 +0800
+Subject: [PATCH] include: add memcg_policy.h, taken from the OpenHarmony 5.10
+ tree
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 SPDX-License-Identifier: GPL-2.0-only
 
 Baseline: gitcode.com/openharmony/kernel_linux_6.6
 Branch:   OpenHarmony-7.0-Release
 Commit:   f4b61510491aa20f7f57fbbc5efc754083c92212
-Found by: tools/audit-includes.py
-
-include/linux/memcg_policy.h is not tracked in the repository, and
-include/linux/memcontrol.h includes it unconditionally:
 
     include/linux/memcontrol.h:24:10: fatal error: linux/memcg_policy.h:
         No such file or directory
+    include/linux/memcontrol.h:311:30: error: field 'memcg_reclaimed' has
+        incomplete type
 
-Four more files include it, all in mm/: memcg_reclaim.c, vmscan.c, zswapd.c and
-zswapd_control.c.  memcontrol.h is core and is compiled by every build, so this
-is not conditional and cannot be configured away.
+include/linux/memcg_policy.h is not tracked in the 6.6 tree.  memcontrol.h
+includes it unconditionally and embeds struct memcg_reclaim by value, so this
+cannot be configured away; mm/memcg_reclaim.c, mm/vmscan.c, mm/zswapd.c and
+mm/zswapd_control.c include it too.
 
-Unlike <linux/xpm_types.h>, which has to supply struct definitions because
-mm_types.h embeds them by value, nothing here is needed: all four users include
-the header and then use no symbol from it, and a tree-wide search finds no
-memcg policy definition to supply.  An empty guarded header is the whole fix.
+The file is not invented here.  kernel_linux_5.10 in the same release carries
+it, and this is that file with two adjustments:
 
-This is the third of the same class in this tree, after the five dangling
-Kconfig sources and <linux/xpm_types.h>.  All three are OpenHarmony additions
-whose implementations were not published; tools/audit-kconfig.py and
-tools/audit-includes.py find them in one pass each so a build does not have to
-discover them one at a time.
+  * The SPDX tag is narrowed from GPL-2.0 to GPL-2.0-only, to match the 6.6
+    tree.  GPL-2.0 section 4 forbids relicensing, and the original copyright
+    is retained.
+
+  * The CONFIG_HYPERHOLD_FILE_LRU, CONFIG_HYPERHOLD_MEMCG and
+    CONFIG_HYPERHOLD_ZSWAPD guards are removed.  In 5.10 the lower half of
+    struct memcg_reclaim only exists when CONFIG_HYPERHOLD_ZSWAPD is set; in
+    6.6 the fields are reached unconditionally — mm/memcontrol.c assigns
+    ub_zram2ufs_ratio, ub_mem2zram_ratio and refault_threshold with atomic_set
+    and mm/zswapd.c does plain arithmetic on reclaimed_pagefault, none of it
+    behind a guard.  Keeping the 5.10 guards would make those files fail to
+    compile, which is the same failure this header's absence already causes.
+
+The field types come from the real definition, so the atomic widths match what
+the tree uses: atomic64_t for app_score and ub_ufs2zram_ratio, atomic_t for
+the ratios and the threshold, unsigned long long for the refault counter.
 
 Upstream: no equivalent; Linux v6.6 has no memcg_policy.h.
 Licence: GPL-2.0-only, same as the tree.
 ---
- include/linux/memcg_policy.h | 29 +++++++++++++++++++++++++++++
- 1 file changed, 29 insertions(+)
+ include/linux/memcg_policy.h | 41 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 41 insertions(+)
  create mode 100644 include/linux/memcg_policy.h
 
 diff --git a/include/linux/memcg_policy.h b/include/linux/memcg_policy.h
 new file mode 100644
-index 0000000..e0f5175
+index 0000000..9e12373
 --- /dev/null
 +++ b/include/linux/memcg_policy.h
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,41 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
-+ * Compatibility shim for the OpenHarmony memcg policy glue.
++ * include/linux/memcg_policy.h
 + *
-+ * include/linux/memcontrol.h includes this header unconditionally, and so do
-+ * mm/memcg_reclaim.c, mm/vmscan.c, mm/zswapd.c and mm/zswapd_control.c, but
-+ * the file is not tracked in the repository:
++ * Copyright (c) 2020-2022 Huawei Technologies Co., Ltd.
 + *
-+ *     CC      arch/arm64/kernel/asm-offsets.s
-+ *     include/linux/memcontrol.h:24:10: fatal error: linux/memcg_policy.h:
-+ *         No such file or directory
-+ *
-+ * Nothing in this tree declares or defines anything that this header is
-+ * supposed to declare: the four users above include it and use no symbol from
-+ * it, and a tree-wide search for a memcg policy definition finds nothing.  So
-+ * the include is a leftover of a feature whose implementation was not
-+ * published, and an empty guarded header is the whole of the fix.
-+ *
-+ * Unlike <linux/xpm_types.h>, which genuinely needs struct definitions because
-+ * mm_types.h embeds them, this one needs nothing — the include resolves and
-+ * the build continues.
-+ *
-+ * When OpenHarmony lands the memcg policy work, delete this file and the
-+ * include lines with it.
 + */
-+#ifndef _LINUX_MEMCG_POLICY_H
-+#define _LINUX_MEMCG_POLICY_H
++#ifndef _MEMCG_POLICY_H
++#define _MEMCG_POLICY_H
++
++struct mem_cgroup;
++struct pglist_data;
++struct scan_control;
++
++
++extern struct list_head score_head;
++extern bool score_head_inited;
++extern rwlock_t score_list_lock;
++extern struct cgroup_subsys memory_cgrp_subsys;
++void shrink_anon_memcg(struct pglist_data *pgdat,
++		struct mem_cgroup *memcg, struct scan_control *sc,
++		unsigned long *nr);
++bool shrink_node_hyperhold(struct pglist_data *pgdat, struct scan_control *sc);
++
++struct mem_cgroup *get_next_memcg(struct mem_cgroup *prev);
++void get_next_memcg_break(struct mem_cgroup *memcg);
++void memcg_app_score_update(struct mem_cgroup *target);
++
++struct memcg_reclaim {
++	atomic64_t app_score;
++	atomic64_t ub_ufs2zram_ratio;
++	atomic_t ub_zram2ufs_ratio;
++	atomic_t ub_mem2zram_ratio;
++	atomic_t refault_threshold;
++	/* anon refault */
++	unsigned long long reclaimed_pagefault;
++};
++#define MAX_APP_SCORE 1000
++
 +
 +#endif /* _LINUX_MEMCG_POLICY_H */
 -- 

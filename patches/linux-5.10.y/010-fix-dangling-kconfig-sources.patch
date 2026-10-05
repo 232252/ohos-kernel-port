@@ -1,6 +1,6 @@
-From 94449c89b160b8ce9b23f9cceac733d57c6fd113 Mon Sep 17 00:00:00 2001
+From ead3cafb2e434ed12ea2e1a182919a37c609dfe1 Mon Sep 17 00:00:00 2001
 From: ohos-kernel-port contributors <232252@users.noreply.github.com>
-Date: Mon, 5 Oct 2026 08:29:12 +0800
+Date: Mon, 5 Oct 2026 08:30:18 +0800
 Subject: [PATCH] fs,security: make the Kconfig graph resolvable without
  dropping symbols
 MIME-Version: 1.0
@@ -9,34 +9,35 @@ Content-Transfer-Encoding: 8bit
 
 SPDX-License-Identifier: GPL-2.0-only
 
-Baseline: gitcode.com/openharmony/kernel_linux_6.6
+Baseline: gitcode.com/openharmony/kernel_linux_5.10
 Branch:   OpenHarmony-7.0-Release
-Commit:   f4b61510491aa20f7f57fbbc5efc754083c92212
+Commit:   (OpenHarmony-7.0-Release, as pinned by the 7.0 manifest)
 Found by: tools/audit-kconfig.py
 
-Three Kconfig files are sourced but are not tracked in the repository:
+The 5.10 tree has the same five dangling Kconfig sources as the 6.6 tree:
 
-    fs/Kconfig:131       -> fs/code_sign/Kconfig
-    fs/Kconfig:133       -> fs/dec/Kconfig
-    security/Kconfig:230 -> security/container_escape_detection/Kconfig
+    fs/Kconfig:119        -> fs/code_sign/Kconfig
+    fs/Kconfig:121        -> fs/dec/Kconfig
+    security/Kconfig:234  -> security/container_escape_detection/Kconfig
+    and, like 6.6, memory_security and xpm are configured but not shipped
 
-Without this patch kbuild cannot start at all:
-
-    fs/Kconfig:131: can't open file "fs/code_sign/Kconfig"
+    $ make O=out ARCH=arm64 olddefconfig
+    fs/Kconfig:119: can't open file "fs/code_sign/Kconfig"
     make[3]: *** [scripts/kconfig/Makefile:77: olddefconfig] Error 1
 
-This also adds declaration-only Kconfig for the two subsystems OpenHarmony
-configures but does not ship, memory_security and xpm, and deliberately keeps
-their source lines.  Removing a source line instead is a trap: with the symbol
-undefined, olddefconfig silently drops CONFIG_SECURITY_XPM even though
-base_defconfig sets it, and the CONFIG_SECURITY_XPM blocks in page-flags.h and
-mm_types.h then take their #else branches — which is how an earlier attempt at
-this patch produced an arity error two files away from the real cause.
+Unlike 6.6, the 5.10 tree does carry include/linux/xpm_types.h,
+include/linux/memcg_policy.h and include/linux/mm_purgeable.h, so this series
+is the whole of what the 5.10 lanes need — the four later patches exist only to
+supply headers that 5.10 already has.
 
-The obj-/subdir- lines that name the absent directories are removed instead:
-enabling the options now builds nothing, which is the true state of the tree.
+The same two-part reasoning as the 6.6 fix applies: add declaration-only
+Kconfig for memory_security and xpm and keep their source lines, so olddefconfig
+does not silently drop CONFIG_SECURITY_XPM and flip the rest of the tree into
+its #else branches; remove the obj-/subdir- lines that name directories which
+do not exist; and remove only the three source lines whose files will never
+exist.
 
-Upstream: no equivalent; none of these files are part of Linux v6.6.
+Upstream: no equivalent; none of these files are part of Linux v5.15.
 Licence: GPL-2.0-only, same as the tree.
 ---
  fs/Kconfig                      |  4 ----
@@ -44,16 +45,16 @@ Licence: GPL-2.0-only, same as the tree.
  fs/proc/memory_security/Kconfig |  8 ++++++++
  security/Kconfig                |  1 -
  security/Makefile               |  3 ---
- security/xpm/Kconfig            | 17 +++++++++++++++++
- 6 files changed, 25 insertions(+), 9 deletions(-)
+ security/xpm/Kconfig            | 16 ++++++++++++++++
+ 6 files changed, 24 insertions(+), 9 deletions(-)
  create mode 100644 fs/proc/memory_security/Kconfig
  create mode 100644 security/xpm/Kconfig
 
 diff --git a/fs/Kconfig b/fs/Kconfig
-index dc6d084..f758aa3 100644
+index 82cda72..46345b7 100644
 --- a/fs/Kconfig
 +++ b/fs/Kconfig
-@@ -129,10 +129,6 @@ config FILE_LOCKING
+@@ -116,10 +116,6 @@ config MANDATORY_FILE_LOCKING
  
  source "fs/crypto/Kconfig"
  
@@ -65,14 +66,14 @@ index dc6d084..f758aa3 100644
  
  source "fs/notify/Kconfig"
 diff --git a/fs/proc/Makefile b/fs/proc/Makefile
-index 04a0dd7..bd08616 100644
+index 8c53f3e..bcbca3e 100644
 --- a/fs/proc/Makefile
 +++ b/fs/proc/Makefile
-@@ -34,4 +34,3 @@ proc-$(CONFIG_PROC_VMCORE)	+= vmcore.o
- proc-$(CONFIG_PRINTK)	+= kmsg.o
+@@ -35,4 +35,3 @@ proc-$(CONFIG_PRINTK)	+= kmsg.o
  proc-$(CONFIG_PROC_PAGE_MONITOR)	+= page.o
  proc-$(CONFIG_BOOT_CONFIG)	+= bootconfig.o
--obj-$(CONFIG_MEMORY_SECURITY) += memory_security/
+ proc-$(CONFIG_SECURITY_XPM)	+= xpm_region.o
+-obj-$(CONFIG_MEMORY_SECURITY)	+= memory_security/
 diff --git a/fs/proc/memory_security/Kconfig b/fs/proc/memory_security/Kconfig
 new file mode 100644
 index 0000000..6d9e0ad
@@ -88,56 +89,54 @@ index 0000000..6d9e0ad
 +config MEMORY_SECURITY
 +	bool
 diff --git a/security/Kconfig b/security/Kconfig
-index a221245..3626fc4 100644
+index 3f6bf76..43cd1c1 100644
 --- a/security/Kconfig
 +++ b/security/Kconfig
-@@ -227,7 +227,6 @@ source "security/safesetid/Kconfig"
+@@ -231,7 +231,6 @@ source "security/yama/Kconfig"
+ source "security/safesetid/Kconfig"
  source "security/lockdown/Kconfig"
  source "security/xpm/Kconfig"
- source "security/landlock/Kconfig"
 -source "security/container_escape_detection/Kconfig"
  
  source "security/integrity/Kconfig"
  
 diff --git a/security/Makefile b/security/Makefile
-index 1fbed3e..18121f8 100644
+index 4042bbb..b34c1fb 100644
 --- a/security/Makefile
 +++ b/security/Makefile
-@@ -4,7 +4,6 @@
- #
- 
- obj-$(CONFIG_KEYS)			+= keys/
+@@ -14,7 +14,6 @@ subdir-$(CONFIG_SECURITY_SAFESETID)    += safesetid
+ subdir-$(CONFIG_SECURITY_LOCKDOWN_LSM)	+= lockdown
+ subdir-$(CONFIG_BPF_LSM)		+= bpf
+ subdir-$(CONFIG_SECURITY_XPM)			+= xpm
 -subdir-$(CONFIG_SECURITY_CONTAINER_ESCAPE_DETECTION) += container_escape_detection
  
  # always enable default capabilities
  obj-y					+= commoncap.o
-@@ -24,9 +23,7 @@ obj-$(CONFIG_SECURITY_SAFESETID)       += safesetid/
+@@ -34,8 +33,6 @@ obj-$(CONFIG_SECURITY_SAFESETID)       += safesetid/
  obj-$(CONFIG_SECURITY_LOCKDOWN_LSM)	+= lockdown/
  obj-$(CONFIG_CGROUPS)			+= device_cgroup.o
  obj-$(CONFIG_BPF_LSM)			+= bpf/
 -obj-$(CONFIG_SECURITY_XPM)		+= xpm/
- obj-$(CONFIG_SECURITY_LANDLOCK)		+= landlock/
 -obj-$(CONFIG_SECURITY_CONTAINER_ESCAPE_DETECTION) += container_escape_detection/
  
  # Object integrity file lists
- obj-$(CONFIG_INTEGRITY)			+= integrity/
+ subdir-$(CONFIG_INTEGRITY)		+= integrity
 diff --git a/security/xpm/Kconfig b/security/xpm/Kconfig
 new file mode 100644
-index 0000000..7ebb7cf
+index 0000000..d93d87a
 --- /dev/null
 +++ b/security/xpm/Kconfig
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,16 @@
 +# SPDX-License-Identifier: GPL-2.0-only
 +#
 +# Declared for configuration compatibility only.  kernel_linux_config sets
-+# CONFIG_SECURITY_XPM in its 6.6 base_defconfig, and the rk3568 board
-+# configuration sets CONFIG_SECURITY_XPM_DEBUG, but this tree ships no
-+# implementation of the xpm subsystem, so enabling these options builds
-+# nothing.  The obj- line in security/Makefile has been removed for that
-+# reason.  The source line in security/Kconfig is deliberately kept: without it
-+# the symbol would be unknown, olddefconfig would silently drop it, and the
-+# CONFIG_SECURITY_XPM blocks elsewhere (page-flags.h, mm_types.h) would take
-+# their #else branches instead.
++# CONFIG_SECURITY_XPM in its base_defconfig, but this tree ships no
++# implementation of the xpm subsystem, so enabling the option builds nothing.
++# The obj- line in security/Makefile has been removed for that reason.  The
++# source line in security/Kconfig is deliberately kept: without it the symbol
++# would be unknown, olddefconfig would silently drop it, and the
++# CONFIG_SECURITY_XPM blocks elsewhere in the tree would take their #else
++# branches instead.
 +config SECURITY_XPM
 +	bool "OpenHarmony XPM (declared only; no implementation in this tree)"
 +

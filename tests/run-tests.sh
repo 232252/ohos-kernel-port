@@ -95,26 +95,33 @@ assert_eq "lane ids are unique" "" "${dupes}"
 section "lane resolution"
 #==============================================================================
 
-assert_eq "primary resolves to the 6.6.101 lane" "ohos-7.0-6.6" "$(lane_resolve primary)"
-assert_eq "latest resolves to the same"           "ohos-7.0-6.6" "$(lane_resolve latest)"
+assert_eq "primary resolves to the shipping LTS lane" "ohos-7.0-5.10" "$(lane_resolve primary)"
+assert_eq "latest resolves to the same"           "ohos-7.0-5.10" "$(lane_resolve latest)"
 assert_eq "exact id"                              "ohos-7.0-5.10" "$(lane_resolve ohos-7.0-5.10)"
-assert_eq "by OpenHarmony branch"                 "ohos-7.0-6.6"  "$(lane_resolve ohos@OpenHarmony-7.0-Release)"
+assert_eq "by OpenHarmony branch leads with the LTS lane" "ohos-7.0-5.10" "$(lane_resolve ohos@OpenHarmony-7.0-Release)"
 assert_eq "by version@branch"                     "ohos-7.0-6.6"  "$(lane_resolve 6.6.101@OpenHarmony-7.0-Release)"
 assert_eq "by kernel version"                     "ohos-7.0-5.10" "$(lane_resolve 5.10.210)"
 assert_true "an unknown selector is rejected"     bash -c "source '${ROOT}/scripts/lib/matrix.sh' >/dev/null 2>&1; lane_resolve no-such-lane >/dev/null 2>&1; [[ \$? -ne 0 ]]"
 
-# The headline promise of the project: the default lane is OpenHarmony 7.0
-# carrying Linux 6.6.101.  Assert both halves independently so a failure says
-# which one broke.
+# The headline promise of the project: both headline lanes track OpenHarmony
+# 7.0, and the default is the LTS kernel OpenHarmony actually ships.  Assert
+# each half separately so a failure says which one broke.
 _primary=$(lane_resolve primary)
 assert_eq "the primary lane targets the 7.0 release branch" \
           "OpenHarmony-7.0-Release" "$(lane_ohos_branch "${_primary}")"
-assert_eq "the primary lane carries Linux 6.6.101" \
-          "6.6.101" "$(lane_kver "${_primary}")"
+assert_eq "the primary lane is the shipping LTS kernel" \
+          "kernel_linux_5.10" "$(lane_repo "${_primary}")"
+assert_eq "the primary lane carries Linux 5.10.210" \
+          "5.10.210" "$(lane_kver "${_primary}")"
 assert_eq "the primary lane builds an arm64 kernel" \
           "arm64" "$(config_arch "${_primary}")"
-assert_eq "the primary lane draws from the OpenHarmony kernel repo" \
-          "kernel_linux_6.6" "$(lane_repo "${_primary}")"
+
+# 6.6.101 stays a supported lane; it is second because that tree is missing
+# headers the 5.10 tree carries (patches/linux-6.6.y supplies them).
+assert_eq "the 6.6 lane still resolves to Linux 6.6.101" \
+          "6.6.101" "$(lane_kver ohos-7.0-6.6)"
+assert_eq "the 6.6 lane still targets 7.0" \
+          "OpenHarmony-7.0-Release" "$(lane_ohos_branch ohos-7.0-6.6)"
 
 #==============================================================================
 section "URL construction"
@@ -213,11 +220,12 @@ section "CLI"
 
 cli_out=$("${ROOT}/ohos-kb" list-lanes 2>&1)
 assert_contains "list-lanes renders the primary lane" "${cli_out}" "ohos-7.0-6.6"
-assert_contains "list-lanes shows the 6.6.101 version" "${cli_out}" "6.6.101"
+assert_contains "list-lanes shows the 6.6.101 lane"  "${cli_out}" "6.6.101"
+assert_contains "list-lanes shows the 5.10.210 lane"  "${cli_out}" "5.10.210"
 assert_contains "list-lanes reports a total"           "${cli_out}" "Total:"
 
 assert_contains "show resolves the branch"  "$("${ROOT}/ohos-kb" show primary 2>&1)" "OpenHarmony-7.0-Release"
-assert_contains "show resolves the version"  "$("${ROOT}/ohos-kb" show primary 2>&1)" "6.6.101"
+assert_contains "show resolves the version"  "$("${ROOT}/ohos-kb" show primary 2>&1)" "5.10.210"
 assert_contains "doctor reports the lane count" "$("${ROOT}/ohos-kb" doctor 2>&1)" "lanes defined"
 assert_contains "version prints"              "$("${ROOT}/ohos-kb" version 2>&1)" "ohos-kb"
 
@@ -632,6 +640,8 @@ assert_eq "no patch removes an SPDX header" "0" "${spdx_removed}"
 # with "unable to auto-detect email address", which reads exactly like a patch
 # conflict.  This was the tenth CI failure.  Reproduce the clean environment and
 # require the patch to apply.
+run_patch_series() {
+    local series=${1:-linux-6.6.y}
 patch_apply_out=""
 if [[ ${patch_count} -gt 0 ]] && have git; then
     # Fetch the real pre-image of every file the shipped patch touches, so this
@@ -639,10 +649,23 @@ if [[ ${patch_count} -gt 0 ]] && have git; then
     repro=$(make_tmpdir)
     emptyhome=$(make_tmpdir)
     got_real=1
+    # Each series targets one tree: linux-5.10.y patches kernel_linux_5.10 and
+    # linux-6.6.y patches kernel_linux_6.6.  Applying both to one tree fails,
+    # which is the point of keeping them separate.
+    case "${1:-linux-6.6.y}" in
+        linux-5.10.y)
+            LANE_UNDER_TEST=ohos-7.0-5.10; SERIES_UNDER_TEST=linux-5.10.y
+            KERNEL_REPO=kernel_linux_5.10
+            NEEDS_HEADERS=0 ;;
+        *)
+            LANE_UNDER_TEST=ohos-7.0-6.6; SERIES_UNDER_TEST=linux-6.6.y
+            KERNEL_REPO=kernel_linux_6.6
+            NEEDS_HEADERS=1 ;;
+    esac
     for f in fs/Kconfig fs/proc/Makefile security/Makefile security/Kconfig \
-             include/linux/mm_types.h; do
+             include/linux/mm_types.h include/linux/page-flags.h; do
         if ! http_get \
-            "https://api.gitcode.com/api/v5/repos/openharmony/kernel_linux_6.6/contents/${f}?ref=OpenHarmony-7.0-Release" \
+            "https://api.gitcode.com/api/v5/repos/openharmony/${KERNEL_REPO}/contents/${f}?ref=OpenHarmony-7.0-Release" \
             "${repro}/blob.json" 2>/dev/null \
            || ! python3 "${HERE}/decode-blob.py" "${repro}/blob.json" "${repro}/${f}"; then
             printf '  (could not fetch %s)\n' "${f}"
@@ -655,23 +678,44 @@ if [[ ${patch_count} -gt 0 ]] && have git; then
     else
         ( cd "${repro}" && git init -q . && git add -A \
           && git -c user.email=t@t -c user.name=t commit -qm "OHOS baseline" ) >/dev/null 2>&1
-        if patch_apply_out=$(env -i PATH="${PATH}" HOME="${emptyhome}" bash -c '
-                set -uo pipefail
-                cd "'"${repro}"'" || exit 1
-                # a runner with no git identity at all
-                git config --local --unset-all user.email 2>/dev/null
-                git config --local --unset-all user.name 2>/dev/null
-                source "'"${ROOT}"'/scripts/lib/common.sh" 2>/dev/null
-                source "'"${ROOT}"'/scripts/lib/matrix.sh" 2>/dev/null
-                source "'"${ROOT}"'/scripts/lib/patch.sh" 2>/dev/null
-                apply_patches ohos-7.0-6.6 "'"${repro}"'" "'"${ROOT}"'/patches"
-            ' 2>&1); then
+        # Pass the lane and series through the environment rather than splicing
+        # them into the command text: nested quoting inside a single-quoted
+        # bash -c is not worth the trouble.
+        if patch_apply_out=$(env -i PATH="${PATH}" HOME="${emptyhome}" \
+                LANE_UNDER_TEST="${LANE_UNDER_TEST}" \
+                SERIES_UNDER_TEST="${SERIES_UNDER_TEST}" \
+                REPRO="${repro}" ROOT="${ROOT}" \
+                bash -c '
+                    set -uo pipefail
+                    cd "${REPRO}" || exit 1
+                    # a runner with no git identity at all
+                    git config --local --unset-all user.email 2>/dev/null
+                    git config --local --unset-all user.name 2>/dev/null
+                    source "${ROOT}/scripts/lib/common.sh" 2>/dev/null
+                    source "${ROOT}/scripts/lib/matrix.sh" 2>/dev/null
+                    source "${ROOT}/scripts/lib/patch.sh" 2>/dev/null
+                    # The third argument is the patches *root*, the directory
+                    # that holds common-kernel-patches/ and linux-<series>.y/.
+                    # Passing the series directory itself makes collect_patches
+                    # look for <series>/<series>/ and find nothing.
+                    apply_patches "${LANE_UNDER_TEST}" "${REPRO}" "${ROOT}/patches"
+                ' 2>&1); then
             problems=0
-            # (a) every dangling source the audit found must be gone
-            for t in fs/proc/memory_security/Kconfig fs/code_sign/Kconfig fs/dec/Kconfig \
-                     security/xpm/Kconfig security/container_escape_detection/Kconfig; do
+            # (a1) the three whose files will never exist must no longer be
+            #      referenced at all
+            for t in fs/code_sign/Kconfig fs/dec/Kconfig \
+                     security/container_escape_detection/Kconfig; do
                 if grep -qF "source \"${t}\"" "${repro}/fs/Kconfig" "${repro}/security/Kconfig" 2>/dev/null; then
                     printf '        still referenced: %s\n' "${t}"; problems=$((problems+1))
+                fi
+            done
+            # (a2) the other two are referenced on purpose, because the patch
+            #      supplies the files — so the reference must now resolve
+            for t in fs/proc/memory_security/Kconfig security/xpm/Kconfig; do
+                if ! grep -qF "source \"${t}\"" "${repro}/fs/Kconfig" "${repro}/security/Kconfig" 2>/dev/null; then
+                    printf '        reference removed but the file is supplied: %s\n' "${t}"; problems=$((problems+1))
+                elif [[ ! -f "${repro}/${t}" ]]; then
+                    printf '        referenced but the file is missing: %s\n' "${t}"; problems=$((problems+1))
                 fi
             done
             # (b) every symbol kernel_linux_config sets from one of them must
@@ -691,13 +735,14 @@ if [[ ${patch_count} -gt 0 ]] && have git; then
             done
             # (d) and both shim headers must be in place
             for h in include/linux/xpm_types.h include/linux/memcg_policy.h; do
+                if [[ "${NEEDS_HEADERS}" == "0" && ! -f "${repro}/${h}" ]]; then continue; fi
                 if [[ ! -f "${repro}/${h}" ]]; then
                     printf '        shim missing after patching: %s\n' "${h}"; problems=$((problems+1))
                 fi
             done
             if [[ ${problems} -eq 0 ]]; then
                 PASS=$((PASS+1))
-                printf '  \033[0;32mok\033[0m   the patches clear all 5 dangling sources, keep their symbols, drop their build hooks\n'
+                printf '  \033[0;32mok\033[0m   %s applies: sources, symbols and build hooks all consistent\n' "${SERIES_UNDER_TEST}"
             else
                 FAIL=$((FAIL+1)); FAILURES+=("the patch left ${problems} dangling-source issue(s)")
                 printf '  \033[0;31mFAIL\033[0m the patch left %s issue(s)\n' "${problems}"
@@ -709,6 +754,12 @@ if [[ ${patch_count} -gt 0 ]] && have git; then
         fi
     fi
     rm -rf "${repro}" "${emptyhome}"
+fi
+}
+
+if have git && [[ ${patch_count} -gt 0 ]]; then
+    run_patch_series linux-5.10.y
+    run_patch_series linux-6.6.y
 fi
 
 # The kconfig auditor is what turns "one missing file per CI run" into "all of
@@ -764,7 +815,9 @@ rm -rf "${t}"
 
 t=$(make_tmpdir)
 mkdir -p "${t}/include/linux"
-printf '#include <linux/present.h>\n#include <linux/gone.h>\n' > "${t}/probe.c"
+# audit-includes.py only judges files every build compiles, so the probe has to
+# be one of those; a file at the tree root is deliberately out of scope.
+printf '#include <linux/present.h>\n#include <linux/gone.h>\n' > "${t}/include/linux/probe.c"
 printf '#define STUB 1\n' > "${t}/include/linux/present.h"
 out=$(python3 "${ROOT}/tools/audit-includes.py" "${t}" --json 2>&1); rc=$?
 if [[ ${rc} -ne 0 ]] && grep -qF "linux/gone.h" <<< "${out}" \
@@ -787,7 +840,7 @@ done
 
 # A clean tree must exit zero, or the auditors would fail every build.
 t=$(make_tmpdir); mkdir -p "${t}/include/linux"
-printf '#include <linux/ok.h>\n' > "${t}/a.c"
+printf '#include <linux/ok.h>\n' > "${t}/include/linux/a.c"
 printf '#define OK 1\n' > "${t}/include/linux/ok.h"
 for tool in audit-kconfig.py audit-includes.py; do
     if python3 "${ROOT}/tools/${tool}" "${t}" >/dev/null 2>&1; then

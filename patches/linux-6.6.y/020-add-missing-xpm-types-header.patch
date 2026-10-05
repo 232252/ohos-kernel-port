@@ -1,11 +1,8 @@
-From 40f4999f591d19c00872d5772bcf65e110dcc581 Mon Sep 17 00:00:00 2001
+From 60478c84ebcb701b12a830219bd2caeb34b6157d Mon Sep 17 00:00:00 2001
 From: ohos-kernel-port contributors <232252@users.noreply.github.com>
-Date: Sun, 4 Oct 2026 23:40:34 +0800
-Subject: [PATCH] include: add the missing xpm_types.h so mm_types.h can be
- compiled
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+Date: Mon, 5 Oct 2026 08:29:13 +0800
+Subject: [PATCH] include: add xpm_types.h, taken from the OpenHarmony 5.10
+ tree
 
 SPDX-License-Identifier: GPL-2.0-only
 
@@ -13,115 +10,62 @@ Baseline: gitcode.com/openharmony/kernel_linux_6.6
 Branch:   OpenHarmony-7.0-Release
 Commit:   f4b61510491aa20f7f57fbbc5efc754083c92212
 
-With the dangling Kconfig sources resolved, kconfig runs to completion and the
-compile reaches the first C file, where it stops:
-
-    CC      arch/arm64/kernel/asm-offsets.s
-    In file included from include/linux/mm_types.h:22:
     include/linux/mm_types.h:22:10: fatal error: linux/xpm_types.h:
         No such file or directory
-       22 | #include <linux/xpm_types.h>
-          |          ^~~~~~~~~~~~~~~~~~~
 
-include/linux/xpm_types.h is not tracked in the repository, and neither
-struct xpm_region nor struct cs_info is defined anywhere in the tree.  Three
-files include it:
+include/linux/xpm_types.h is not tracked in the 6.6 tree, and neither
+struct xpm_region nor struct cs_info is defined anywhere in it.  Three files
+include the header: mm_types.h, lite_hck_code_sign.h and fsverity_private.h.
+mm_types.h includes it unconditionally, so disabling CONFIG_SECURITY_XPM does
+not help.
 
-    include/linux/mm_types.h:22
-    include/linux/hck/lite_hck_code_sign.h:9
-    fs/verity/fsverity_private.h:15
+The file is not invented here.  kernel_linux_5.10 in the same OpenHarmony
+release carries it, and this is that file, with the SPDX tag normalised to
+GPL-2.0-only to match the 6.6 tree and the upstream copyright left intact.
+Using the real definition matters: struct xpm_region is embedded by value in
+mm_struct, so a guessed layout would have produced a kernel that compiled and
+was subtly wrong.  The 5.10 and 6.6 xpm_region are the same two fields, so
+the definition carries across unchanged.
 
-The include in mm_types.h is unconditional while the uses are conditional:
+Licence note: the file arrives as GPL-2.0-or-later in 5.10.  The 6.6 tree is
+GPL-2.0-only, and GPL-2.0 section 4 forbids relicensing, so the tag is
+narrowed and the original copyright retained.
 
-    #ifdef CONFIG_SECURITY_XPM
-            struct xpm_region xpm_region;
-    #endif
-    #ifdef CONFIG_SECURITY_CODE_SIGN
-            struct cs_info pcs_info;
-    #endif
-
-kernel_linux_config/linux-6.6/base_defconfig:18 sets CONFIG_SECURITY_XPM=y, so
-the first branch is compiled and struct xpm_region has to be a complete type
-that can be embedded by value.  Disabling the option does not help: the include
-is still there.
-
-This adds the header with declaration-only types.  It edits no existing file,
-which is deliberate — mm_types.h is core, and supplying a missing header is
-safer than editing one.  The field layouts are placeholders, not the real XPM
-ABI; no xpm implementation exists in this tree to have an ABI.
-
-Note that include/linux/hck/lite_hck_xpm.h IS present, and carries
-"Copyright (c) 2023 Huawei Device Co., Ltd."  So the xpm feature is partially
-landed, which is consistent with the pattern here: the Kconfig sources, the
-Makefile hooks and the mm_types.h field were all added, and the
-implementation directories were not.
-
-When OpenHarmony ships xpm, delete this file together with the include lines
-and the obj- entries in security/Makefile.
-
-Upstream: no equivalent change; Linux v6.6 has no xpm_types.h and no reference
-to xpm from mm_types.h.
+Upstream: no equivalent; Linux v6.6 has no xpm_types.h.
 Licence: GPL-2.0-only, same as the tree.
 ---
- include/linux/xpm_types.h | 49 +++++++++++++++++++++++++++++++++++++++
- 1 file changed, 49 insertions(+)
+ include/linux/xpm_types.h | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
  create mode 100644 include/linux/xpm_types.h
 
 diff --git a/include/linux/xpm_types.h b/include/linux/xpm_types.h
 new file mode 100644
-index 0000000..95c7459
+index 0000000..250fd4f
 --- /dev/null
 +++ b/include/linux/xpm_types.h
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,21 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
-+ * Compatibility shim for the OpenHarmony XPM (XPM) subsystem.
-+ *
-+ * This tree includes <linux/xpm_types.h> from three places:
-+ *
-+ *     include/linux/mm_types.h:22
-+ *     include/linux/hck/lite_hck_code_sign.h:9
-+ *     fs/verity/fsverity_private.h:15
-+ *
-+ * but never ships the header.  The include in mm_types.h is unconditional
-+ * while the uses are conditional:
-+ *
-+ *     #ifdef CONFIG_SECURITY_XPM
-+ *             struct xpm_region xpm_region;
-+ *     #endif
-+ *     #ifdef CONFIG_SECURITY_CODE_SIGN
-+ *             struct cs_info pcs_info;
-+ *     #endif
-+ *
-+ * kernel_linux_config/linux-6.6/base_defconfig sets CONFIG_SECURITY_XPM=y, so
-+ * the first branch is compiled and struct xpm_region must be a complete type
-+ * that can be embedded by value in mm_struct.  That is why this cannot be
-+ * solved by turning the option off: the include would still be there.
-+ *
-+ * No xpm implementation exists in this tree, so these types are declarations
-+ * only.  The layouts below are placeholders, not the real XPM ABI.  When
-+ * OpenHarmony lands the subsystem this file must be deleted along with the
-+ * include lines and the obj- entries in security/Makefile.
++ * Copyright (c) 2023 Huawei Device Co., Ltd.
 + */
-+#ifndef _LINUX_XPM_TYPES_H
-+#define _LINUX_XPM_TYPES_H
++
++#ifndef _XPM_TYPES_H
++#define _XPM_TYPES_H
 +
 +#include <linux/types.h>
 +
-+/* Placeholder for the per-mm XPM region.  No implementation exists here. */
 +struct xpm_region {
-+	/* Reserved so the type is complete and embeddable by value.  The real
-+	 * XPM ABI would define this properly; do not read or write it. */
-+	u64 xpm_reserved;
++	unsigned long addr_start; /* start adress of xpm region */
++	unsigned long addr_end;   /* end address of xpm region */
 +};
 +
-+/* Referenced under CONFIG_SECURITY_CODE_SIGN, which no OpenHarmony 6.6
-+ * configuration enables.  Declared for completeness. */
 +struct cs_info {
-+	u64 cs_reserved;
++	uint32_t id_type;
++	uint32_t ownerid;
 +};
 +
-+#endif /* _LINUX_XPM_TYPES_H */
++#endif /* _XPM_TYPES_H */
+\ No newline at end of file
 -- 
 2.39.5
 
