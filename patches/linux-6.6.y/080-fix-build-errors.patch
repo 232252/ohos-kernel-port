@@ -1,7 +1,7 @@
-From 387f159f64da86ecf0a2aba64809145ac2838c43 Mon Sep 17 00:00:00 2001
+From 825fa89ca4dd1eae334a542f5368d19b1347ea9b Mon Sep 17 00:00:00 2001
 From: ohos-kernel-port contributors <232252@users.noreply.github.com>
-Date: Mon, 5 Oct 2026 10:12:00 +0800
-Subject: [PATCH] fix four build errors in the 6.6 tree
+Date: Mon, 5 Oct 2026 10:44:11 +0800
+Subject: [PATCH] fix the build errors in the 6.6 tree
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -18,67 +18,42 @@ Reported by a full arm64 build of lane ohos-7.0-6.6:
       prototype [-Werror=strict-prototypes]
   mm/zswapd_control.c:848:29: error: 'eswap_info_show' undeclared here
   drivers/dma-buf/dma-buf-process-info.c:34:12: error: 'struct dma_buf' has no
-      member named 'exp_pid'
-  ... and 'exp_task_comm', 12 times in that file
+      member named 'exp_pid'  (and 'exp_task_comm', 12 times in that file)
 
-1.  Definitions with an empty parameter list: in C, f() declares unspecified
-    arguments, not none, and the kernel builds with -Werror=strict-prototypes.
-    This tree has four such definitions, not one; all are given (void).
+1.  rtg_ctrl.c has one definition with an empty parameter list.  In C, f()
+    declares unspecified arguments rather than none, and the kernel builds with
+    -Werror=strict-prototypes.  Only the definition at line 430 is changed; the
+    three call sites at 447, 512 and 540 are left as they are.  An earlier
+    revision of this patch rewrote those too, which produced "too many
+    arguments to function 'curr_grp_id'".
 
 2.  eswap_info_show is defined inside #ifdef CONFIG_HYPERHOLD_DEBUG but its
-    cftype entry is not, so with that option off — which is what
+    cftype entry is not, so with that option off — what
     kernel_linux_config's type/standard_defconfig gives — the handler is
     referenced with no declaration.  The entry now carries the same guard as
-    the zswapd_vmstat_show entry above it, the pattern this file already uses
-    for a debug-only proc file.
+    the zswapd_vmstat_show entry above it, which is the pattern this file
+    already uses for a debug-only proc file.
 
 3.  include/linux/dma-buf.h has no CONFIG_DMABUF_PROCESS_INFO block at all,
     yet drivers/dma-buf/dma-buf-process-info.c in this same tree uses exp_pid
     and exp_task_comm twelve times.  The two fields are added under the guard
     the 5.10 tree uses for them, so the 6.6 struct matches 5.10's and the
-    driver compiles.  The fields are inert unless the option is set.
+    driver compiles.  They are inert unless the option is set.
+
+Note: this tree's drivers/accesstokenid/access_tokenid.c already spells its
+function with (void); an earlier revision of this patch was generated with a
+blanket substitution that "fixed" the call sites there too and broke the build
+in a new way.
 
 Upstream: no equivalent; these are OpenHarmony additions, and the 6.6 tree's
 struct dma_buf and its own dma-buf-process-info.c disagree with each other.
 Licence: GPL-2.0-only, same as the tree.
 ---
- drivers/accesstokenid/access_tokenid.c | 6 +++---
- include/linux/dma-buf.h                | 4 ++++
- kernel/sched/rtg/rtg_ctrl.c            | 8 ++++----
- mm/zswapd_control.c                    | 2 ++
- 4 files changed, 13 insertions(+), 7 deletions(-)
+ include/linux/dma-buf.h     | 4 ++++
+ kernel/sched/rtg/rtg_ctrl.c | 2 +-
+ mm/zswapd_control.c         | 2 ++
+ 3 files changed, 7 insertions(+), 1 deletion(-)
 
-diff --git a/drivers/accesstokenid/access_tokenid.c b/drivers/accesstokenid/access_tokenid.c
-index 23b10aa..5e7e934 100644
---- a/drivers/accesstokenid/access_tokenid.c
-+++ b/drivers/accesstokenid/access_tokenid.c
-@@ -214,7 +214,7 @@ static struct token_perm_node *remove_node_by_token(struct token_perm_node **roo
- 
- int access_tokenid_add_permission(struct file *file, void __user *uarg)
- {
--	if (!check_permission_for_set_token_permission())
-+	if (!check_permission_for_set_token_permission(void))
- 		return -EPERM;
- 
- 	struct token_perm_node *node = kmem_cache_zalloc(g_cache, GFP_KERNEL);
-@@ -237,7 +237,7 @@ int access_tokenid_add_permission(struct file *file, void __user *uarg)
- 
- int access_tokenid_remove_permission(struct file *file, void __user *uarg)
- {
--	if (!check_permission_for_set_token_permission())
-+	if (!check_permission_for_set_token_permission(void))
- 		return -EPERM;
- 
- 	uint32_t token = 0;
-@@ -256,7 +256,7 @@ int access_tokenid_remove_permission(struct file *file, void __user *uarg)
- 
- int access_tokenid_set_permission(struct file *file, void __user *uarg)
- {
--	if (!check_permission_for_set_token_permission())
-+	if (!check_permission_for_set_token_permission(void))
- 		return -EPERM;
- 
- 	ioctl_set_get_perm_data set_perm_data;
 diff --git a/include/linux/dma-buf.h b/include/linux/dma-buf.h
 index 3f31baa..e02d5fa 100644
 --- a/include/linux/dma-buf.h
@@ -95,7 +70,7 @@ index 3f31baa..e02d5fa 100644
  	/** @poll: for userspace poll support */
  	wait_queue_head_t poll;
 diff --git a/kernel/sched/rtg/rtg_ctrl.c b/kernel/sched/rtg/rtg_ctrl.c
-index 164f1b2..6d3ceb4 100644
+index 164f1b2..0cab1f8 100644
 --- a/kernel/sched/rtg/rtg_ctrl.c
 +++ b/kernel/sched/rtg/rtg_ctrl.c
 @@ -427,7 +427,7 @@ int update_frame_state(int grp_id, int margin, bool in_frame)
@@ -107,33 +82,6 @@ index 164f1b2..6d3ceb4 100644
  {
  	return sched_get_group_id(current);
  }
-@@ -444,7 +444,7 @@ static long ctrl_frame_state(void __user *uarg, bool is_enter)
- 		return -INVALID_ARG;
- 	}
- 
--	return update_frame_state(curr_grp_id(), state_data.state_param, is_enter);
-+	return update_frame_state(curr_grp_id(void), state_data.state_param, is_enter);
- }
- 
- static long ctrl_begin_frame(int abi, void __user *uarg)
-@@ -509,7 +509,7 @@ static long ctrl_set_min_util(int abi, void __user *uarg)
- 		return -INVALID_ARG;
- 	}
- 
--	return set_min_util(curr_grp_id(), state_data.state_param);
-+	return set_min_util(curr_grp_id(void), state_data.state_param);
- }
- 
- static int set_margin(int grp_id, int margin)
-@@ -537,7 +537,7 @@ static long ctrl_set_margin(int abi, void __user *uarg)
- 		return -INVALID_ARG;
- 	}
- 
--	return set_margin(curr_grp_id(), state_data.state_param);
-+	return set_margin(curr_grp_id(void), state_data.state_param);
- }
- 
- static void clear_rtg_frame_thread(struct frame_info *frame_info, bool reset)
 diff --git a/mm/zswapd_control.c b/mm/zswapd_control.c
 index 80f7bc3..f6fd0c5 100644
 --- a/mm/zswapd_control.c

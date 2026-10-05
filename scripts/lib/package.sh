@@ -35,7 +35,12 @@ _OKCP_PACKAGE_SH=1
 [[ -z "${_OKCP_PACK_SH:-}" ]] && source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/pack.sh"
 
 OKCP_PACKAGER="${OKCP_PACKAGER:-standalone}"
-OKCP_ARTIFACT_DIR="${OKCP_ARTIFACT_DIR:-${OKCP_ROOT}/build/artifacts}"
+# Follow OKCP_WORKDIR like OKCP_OUT_ROOT does.  It did not, so a CI run that
+# mounts a large volume at /builder wrote its build output there and its
+# artifacts in the workspace, and the artifact-upload step looked in /builder
+# and found nothing:
+#   ##[error]No files were found with the provided path
+OKCP_ARTIFACT_DIR="${OKCP_ARTIFACT_DIR:-${OKCP_WORKDIR:-${OKCP_ROOT}/build}/artifacts}"
 
 #--------------------------------------------------------------- small utils
 # Kernel version straight out of a source tree's top-level Makefile.
