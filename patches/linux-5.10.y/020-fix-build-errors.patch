@@ -1,0 +1,98 @@
+From 742d0f4b5e1f65122f02439a8ca7e6bc99d4c758 Mon Sep 17 00:00:00 2001
+From: ohos-kernel-port contributors <232252@users.noreply.github.com>
+Date: Mon, 5 Oct 2026 10:08:13 +0800
+Subject: [PATCH] fix three build errors in the 5.10 tree
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+SPDX-License-Identifier: GPL-2.0-only
+
+Baseline: gitcode.com/openharmony/kernel_linux_5.10
+Branch:   OpenHarmony-7.0-Release
+
+Reported by a full arm64 build of lane ohos-7.0-5.10:
+
+  kernel/sched/rtg/rtg_ctrl.c:430:19: error: function declaration isn't a
+      prototype [-Werror=strict-prototypes]
+  mm/zswapd_control.c:846:29: error: 'eswap_info_show' undeclared here
+      (not in a function)
+  drivers/accesstokenid/access_tokenid.c:122:13: error: function declaration
+      isn't a prototype [-Werror=strict-prototypes]
+
+1 and 3 are the same mistake: a definition with an empty parameter list.
+
+    static inline int curr_grp_id()
+    static bool check_permission_for_set_token_permission()
+
+In C, f() declares a function taking unspecified arguments, not a function
+taking none.  The kernel builds with -Werror=strict-prototypes, so both are
+hard errors.  Adding (void) states what was meant, and is what the other
+definitions in these files do.
+
+2 is a genuine missing guard.  eswap_info_show is defined at line 669, inside
+
+    #ifdef CONFIG_HYPERHOLD_DEBUG
+
+but its cftype entry in the table is not, so with CONFIG_HYPERHOLD_DEBUG off —
+which is what kernel_linux_config's type/standard_defconfig gives — the handler
+is referenced without a declaration.  The entry is now under the same guard as
+the one above it, the zswapd_vmstat_show entry, which is the pattern this file
+already uses for a debug-only proc file.  A debug-only handler should not be
+registered unconditionally.
+
+Upstream: no equivalent; these are OpenHarmony additions.
+Licence: GPL-2.0-only, same as the tree.
+---
+ drivers/accesstokenid/access_tokenid.c | 2 +-
+ kernel/sched/rtg/rtg_ctrl.c            | 2 +-
+ mm/zswapd_control.c                    | 2 ++
+ 3 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/accesstokenid/access_tokenid.c b/drivers/accesstokenid/access_tokenid.c
+index de2f7db..bbbf387 100644
+--- a/drivers/accesstokenid/access_tokenid.c
++++ b/drivers/accesstokenid/access_tokenid.c
+@@ -119,7 +119,7 @@ int access_tokenid_set_ftokenid(struct file *file, void __user *uarg)
+ 	return 0;
+ }
+ 
+-static bool check_permission_for_set_token_permission()
++static bool check_permission_for_set_token_permission(void)
+ {
+ 	kuid_t uid = current_uid();
+ 	return uid_eq(uid, ACCESS_TOKEN_UID) || uid_eq(uid, GLOBAL_ROOT_UID);
+diff --git a/kernel/sched/rtg/rtg_ctrl.c b/kernel/sched/rtg/rtg_ctrl.c
+index 164f1b2..0cab1f8 100644
+--- a/kernel/sched/rtg/rtg_ctrl.c
++++ b/kernel/sched/rtg/rtg_ctrl.c
+@@ -427,7 +427,7 @@ int update_frame_state(int grp_id, int margin, bool in_frame)
+ 	return ret;
+ }
+ 
+-static inline int curr_grp_id()
++static inline int curr_grp_id(void)
+ {
+ 	return sched_get_group_id(current);
+ }
+diff --git a/mm/zswapd_control.c b/mm/zswapd_control.c
+index 8ee2ba6..c92525c 100644
+--- a/mm/zswapd_control.c
++++ b/mm/zswapd_control.c
+@@ -840,11 +840,13 @@ static struct cftype zswapd_policy_files[] = {
+ 		.seq_show = zswapd_vmstat_show,
+ 	},
+ #endif
++#ifdef CONFIG_HYPERHOLD_DEBUG
+ 	{
+ 		.name = "eswap_info",
+ 		.flags = CFTYPE_ONLY_ON_ROOT,
+ 		.seq_show = eswap_info_show,
+ 	},
++#endif
+ 
+ 	{ },	/* terminate */
+ };
+-- 
+2.39.5
+
