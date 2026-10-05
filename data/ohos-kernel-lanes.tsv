@@ -26,22 +26,27 @@
 #   5 ohos_branch OpenHarmony release branch this lane tracks
 #   6 kver        kernel version string read from that branch's Makefile
 #   7 overlay     config overlay dir under configs/lanes/<overlay>/
-#   8 status      primary | stable | legacy | experimental
+
 #   9 note        free text
 #  10 board       board layer in kernel_linux_config ('' = none, generic build)
 #  11 arch        target ARCH override; empty means derived from the repository
 #
 # Verified against gitcode.com/openharmony on 2026-10-04..06.
-ohos-7.0-6.6-rk3568	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	OpenHarmony 7.0 on RK3568 - the only device board with a 6.6 configuration	rk3568	
-ohos-7.0-6.6-qemu-arm64	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	6.6 on the arm64 QEMU target, for emulation and CI	qemu	
+ohos-7.0-6.6-rk3568	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	MAIN LINE: OpenHarmony 7.0 on RK3568 - the only device board with a 6.6 configuration	rk3568	
+ohos-7.0-6.6-qemu-arm64	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	MAIN LINE: 6.6 on the arm64 QEMU target, for emulation and CI	qemu	
 ohos-7.0-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	stable	boardless generic 6.6 build - NOT for a device; see docs/BOARDS.md		
-ohos-7.0-5.10-rk3568	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS on RK3568, the reference OHOS dev board (Orange Pi 5 Plus class); config 6187 lines	rk3568	
-ohos-7.0-5.10-myd_imx8mm	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS on MYD i.MX8M Mini, arm64; config 1686 lines	myd_imx8mm	
-ohos-7.0-5.10-unionpi_tiger	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS on UnionPi Tiger, RK3588-class SBC, arm64; config 6050 lines	unionpi_tiger	
-ohos-7.0-5.10-yangfan	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS on Yangfan board, arm64; config 6040 lines	yangfan	
-ohos-7.0-5.10-hispark_taurus	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS on HiSpark Taurus, arm (32-bit); config 3638 lines	hispark_taurus	arm
-ohos-7.0-5.10-qemu	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS on arm64 QEMU target; config 1650 lines	qemu	
-ohos-7.0-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	stable	boardless generic 5.10 build - NOT for a device		
+ohos-7.0-6.6-myd_imx8mm	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	MAIN LINE 6.6.101: MYD i.MX8M Mini —— 由 5.10 板级配置移植到 6.6；OpenHarmony 无 6.6 配置，本项目从 5.10 移植	myd_imx8mm	
+ohos-7.0-6.6-unionpi_tiger	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	MAIN LINE 6.6.101: UnionPi Tiger（RK3588 级 SBC）—— 由 5.10 移植到 6.6；OpenHarmony 无 6.6 配置，本项目从 5.10 移植	unionpi_tiger	
+ohos-7.0-6.6-yangfan	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	MAIN LINE 6.6.101: 扬帆 Yangfan 板 —— 由 5.10 移植到 6.6；OpenHarmony 无 6.6 配置，本项目从 5.10 移植	yangfan	
+ohos-7.0-6.6-hispark_taurus	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	MAIN LINE 6.6.101: HiSpark Taurus —— 32 位 ARM，由 5.10 移植到 6.6；本项目里唯一的非 arm64 目标；OpenHarmony 无 6.6 配置	hispark_taurus	arm
+ohos-7.0-6.6-qemu-arm	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	MAIN LINE 6.6.101: 32 位 QEMU 目标，供模拟与 CI	qemu	
+ohos-7.0-5.10-rk3568	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 7.0 LTS on RK3568, the reference OHOS dev board (Orange Pi 5 Plus class); config 6187 lines	rk3568	
+ohos-7.0-5.10-myd_imx8mm	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 7.0 LTS on MYD i.MX8M Mini, arm64; config 1686 lines	myd_imx8mm	
+ohos-7.0-5.10-unionpi_tiger	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 7.0 LTS on UnionPi Tiger, RK3588-class SBC, arm64; config 6050 lines	unionpi_tiger	
+ohos-7.0-5.10-yangfan	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 7.0 LTS on Yangfan board, arm64; config 6040 lines	yangfan	
+ohos-7.0-5.10-hispark_taurus	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 7.0 LTS on HiSpark Taurus, arm (32-bit); config 3638 lines	hispark_taurus	arm
+ohos-7.0-5.10-qemu	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 7.0 LTS on arm64 QEMU target; config 1650 lines	qemu	
+ohos-7.0-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: boardless generic 5.10 build - NOT for a device		
 ohos-7.0-beta1-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Beta1	6.6.101	ohos-6.6	stable	OpenHarmony 7.0 beta, rk3568 board	rk3568	
 ohos-6.1-lts-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.1-LTS	6.6.101	ohos-6.6	stable	OpenHarmony 6.1 LTS, rk3568 board	rk3568	
 ohos-6.1-release-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.1-Release	6.6.101	ohos-6.6	stable	OpenHarmony 6.1, rk3568 board	rk3568	
@@ -49,16 +54,16 @@ ohos-6.0-release-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenH
 ohos-6.0-beta1-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.0-Beta1	6.6.89	ohos-6.6	stable	OpenHarmony 6.0 beta, last 6.6.89 baseline, rk3568 board	rk3568	
 ohos-5.1.0-release-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-5.1.0-Release	6.6.89	ohos-6.6	stable	OpenHarmony 5.1, rk3568 board	rk3568	
 ohos-5.0.0-release-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-5.0.0-Release	6.6.22	ohos-6.6	stable	OpenHarmony 5.0, last 6.6.22 baseline, rk3568 board	rk3568	
-ohos-6.1-lts-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-6.1-LTS	5.10.210	ohos-5.10	legacy	OpenHarmony 6.1 LTS, rk3568 board	rk3568	
-ohos-6.1-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-6.1-Release	5.10.210	ohos-5.10	legacy	OpenHarmony 6.1, rk3568 board	rk3568	
-ohos-6.0-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-6.0-Release	5.10.210	ohos-5.10	legacy	OpenHarmony 6.0, rk3568 board	rk3568	
-ohos-5.1.0-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-5.1.0-Release	5.10.210	ohos-5.10	legacy	OpenHarmony 5.1, rk3568 board	rk3568	
-ohos-5.0.0-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-5.0.0-Release	5.10.208	ohos-5.10	legacy	OpenHarmony 5.0, rk3568 board	rk3568	
-ohos-4.1-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-4.1-Release	5.10.184	ohos-5.10	legacy	OpenHarmony 4.1, rk3568 board	rk3568	
-ohos-4.0-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-4.0-Release	5.10.165	ohos-5.10	legacy	OpenHarmony 4.0, rk3568 board	rk3568	
-ohos-3.2-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-3.2-Release	5.10.97	ohos-5.10	legacy	OpenHarmony 3.2 LTS, rk3568 board	rk3568	
-ohos-3.1-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-3.1-Release	5.10.79	ohos-5.10	legacy	OpenHarmony 3.1, rk3568 board	rk3568	
-ohos-3.0-lts-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-3.0-LTS	5.10.57	ohos-5.10	legacy	OpenHarmony 3.0 LTS, rk3568 board	rk3568	
+ohos-6.1-lts-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-6.1-LTS	5.10.210	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 6.1 LTS, rk3568 board	rk3568	
+ohos-6.1-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-6.1-Release	5.10.210	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 6.1, rk3568 board	rk3568	
+ohos-6.0-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-6.0-Release	5.10.210	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 6.0, rk3568 board	rk3568	
+ohos-5.1.0-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-5.1.0-Release	5.10.210	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 5.1, rk3568 board	rk3568	
+ohos-5.0.0-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-5.0.0-Release	5.10.208	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 5.0, rk3568 board	rk3568	
+ohos-4.1-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-4.1-Release	5.10.184	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 4.1, rk3568 board	rk3568	
+ohos-4.0-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-4.0-Release	5.10.165	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 4.0, rk3568 board	rk3568	
+ohos-3.2-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-3.2-Release	5.10.97	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 3.2 LTS, rk3568 board	rk3568	
+ohos-3.1-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-3.1-Release	5.10.79	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 3.1, rk3568 board	rk3568	
+ohos-3.0-lts-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-3.0-LTS	5.10.57	ohos-5.10	secondary	SIDE LINE, 5.10 LTS: OpenHarmony 3.0 LTS, rk3568 board	rk3568	
 ohos-4.0b1-4.19-hispark_taurus	ohos	kernel_linux_4.19	https://gitcode.com/openharmony	OpenHarmony-4.0-Beta1	4.19.155	ohos-4.19	legacy	last 4.19 maintenance, HiSpark Taurus (arm)	hispark_taurus	arm
 ohos-2.2-4.19	ohos	kernel_linux	https://gitcode.com/openharmony	OpenHarmony-2.2-Beta2	4.19.155	ohos-4.19	legacy	OpenHarmony 2.2, boardless		
 upstream-5.15.y	upstream	linux-5.15.y	https://github.com/ophub	-	5.15.y	ohos-5.15	experimental	ophub mainline tree + OHOS config overlay; no OHOS release validates this		

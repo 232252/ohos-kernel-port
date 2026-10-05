@@ -16,7 +16,27 @@ pin/mux、没有触摸控制器。rk3568 那份 6193 行的配置里有 24 个 `
 同样是「板型族 × 内核版本」分别出 defconfig，发布 `5.10-rk35xx`、`6.6-stable` 这类
 按设备分开的内核。
 
-## OpenHarmony 7.0 公开可编译的矩阵
+## 主线：所有设备都是 6.6.101
+
+**这是本项目的硬要求**：主线只有 6.6.101，一个内核版本走到底。5.10 只作为 `secondary`
+支线存在（那是 OpenHarmony 今天真正出货的 LTS 内核），不作为 6.6 的替代方案。
+
+OpenHarmony 在 `OpenHarmony-7.0-Release` 上只为 **rk3568** 提供了 6.6 板级配置，
+其余板型只有 5.10 配置。要让所有设备都跑 6.6.101，就必须由本项目把那些板级配置
+**移植**到 6.6：拿 5.10 的板级配置做种子，交给 6.6 的 kconfig 解析，然后把
+**这个内核不再认识的符号全部列出来**（`DROPPED-SYMBOLS.txt`）——静默缩水比
+没有内核更糟。
+
+| 板型 | 6.6 配置来源 | 备注 |
+| --- | --- | --- |
+| `rk3568` | **OpenHarmony 原生** | `linux-6.6/rk3568/arch/arm64_defconfig` |
+| `qemu-arm64` / `qemu-arm` | **OpenHarmony 原生** | `linux-6.6/arch/*/configs/qemu-arm*-linux_standard_defconfig` |
+| `myd_imx8mm` | 从 `linux-5.10/arch/arm64/configs/myd_imx8mm_defconfig` 移植 | |
+| `unionpi_tiger` | 从 `linux-5.10/unionpi_tiger/arch/arm64_defconfig` 移植 | |
+| `yangfan` | 从 `linux-5.10/yangfan/arch/arm64_defconfig` 移植 | |
+| `hispark_taurus` | 从 `linux-5.10/hispark_taurus/arch/arm_defconfig` 移植 | **arm 32 位** |
+
+## 支线：5.10.210（secondary，非主线）
 
 以下每一行都是本项目已能解析到独立板级配置的 lane（`./ohos-kb show <lane>` 可查）。
 

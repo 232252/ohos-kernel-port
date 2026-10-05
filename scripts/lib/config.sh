@@ -91,6 +91,83 @@ lane_board_layer() {
 }
 config_arch() { lane_arch "$1"; }
 
+# ---------------------------------------------------------------------------
+# Board configuration porting across kernel versions
+# ---------------------------------------------------------------------------
+# OpenHarmony ships a per-board configuration for some boards on some kernel
+# versions and not others: at OpenHarmony-7.0-Release, linux-6.6/ has rk3568
+# and nothing else, while linux-5.10/ has six boards.  This project's target is
+# 6.6.101 for every device, so the boards with no native 6.6 configuration have
+# to be carried over.
+#
+# This is what a distribution does when it moves a board from one kernel series
+# to another: seed the new tree's .config with the old board configuration and
+# let the new tree's kconfig resolve it.  Symbols the new Kconfig does not know
+# are dropped — unavoidable — so the port reports exactly which, because a
+# silently shrunken board configuration is worse than no kernel at all.
+
+# Every configuration that exists for a board, as "native<TAB>path" (for this
+# series) or "port<TAB>path" (for another series), native first.
+board_config_candidates() {
+    local cfgroot=$1 board=$2 series=$3 cand other
+    [[ -n "${board}" ]] || return 0
+    [[ -d "${cfgroot}" ]] || return 0
+
+    # --- native: this exact series ---------------------------------------
+    for cand in \
+        "${cfgroot}/linux-${series}/${board}/arch/arm64_defconfig" \
+        "${cfgroot}/linux-${series}/${board}/arch/arm_defconfig" \
+        "${cfgroot}/linux-${series}/arch/arm64/configs/${board}"_defconfig \
+        "${cfgroot}/linux-${series}/arch/arm/configs/${board}"_defconfig
+    do
+        [[ -f "${cand}" ]] && printf 'native\t%s\n' "${cand}"
+    done
+    for cand in "${cfgroot}"/linux-${series}/arch/*/configs/"${board}"*_defconfig; do
+        [[ -f "${cand}" ]] && printf 'native\t%s\n' "${cand}"
+    done
+
+    # --- port: any other series, oldest first so the newest ends up last ---
+    for other in $(ls -1 "${cfgroot}" 2>/dev/null | grep '^linux-' | sort -V); do
+        [[ "${other}" == "linux-${series}" ]] && continue
+        for cand in \
+            "${cfgroot}/${other}/${board}/arch/arm64_defconfig" \
+            "${cfgroot}/${other}/${board}/arch/arm_defconfig" \
+            "${cfgroot}/${other}/arch/arm64/configs/${board}"_defconfig \
+            "${cfgroot}/${other}/arch/arm/configs/${board}"_defconfig
+        do
+            [[ -f "${cand}" ]] && printf 'port\t%s\n' "${cand}"
+        done
+        for cand in "${cfgroot}/${other}"/arch/*/configs/"${board}"*_defconfig; do
+            [[ -f "${cand}" ]] && printf 'port\t%s\n' "${cand}"
+        done
+    done
+    return 0
+}
+
+# The newest port candidate, i.e. what a port would seed from.
+board_config_port_source() {
+    local cfgroot=$1 board=$2 series=$3 kind path last=""
+    # Candidates are emitted oldest series first, so the last port entry is the
+    # newest configuration available for this board.
+    while IFS=$'\t' read -r kind path; do
+        if [[ "${kind}" == "port" ]]; then last="${path}"; fi
+    done < <(board_config_candidates "${cfgroot}" "${board}" "${series}")
+    [[ -n "${last}" ]] && printf '%s\n' "${last}"
+    return 0
+}
+
+# Symbols the seed configuration asked for that this kernel's Kconfig does not
+# define: the feature loss a port cannot avoid.  Counted and listed, never
+# swallowed.
+report_dropped_symbols() {
+    local seed=$1 resolved=$2 out=$3
+    mkdir -p "$(dirname -- "${out}")"
+    grep -oE '^CONFIG_[A-Za-z0-9_]+=' "${seed}" 2>/dev/null | sed 's/=$//' | sort -u > "${out}.want"
+    grep -oE '^CONFIG_[A-Za-z0-9_]+=' "${resolved}" 2>/dev/null | sed 's/=$//' | sort -u > "${out}.have"
+    comm -23 "${out}.want" "${out}.have" > "${out}.dropped" 2>/dev/null || true
+    wc -l < "${out}.dropped" 2>/dev/null | tr -d ' ' || printf '0'
+}
+
 #------------------------------------------------------- config repo access
 # Clone (or reuse) the OpenHarmony configuration repository for a lane.
 #
@@ -245,67 +322,69 @@ generate_config() {
         # short-circuited `[[ cond ]] && x=...` makes any later reference fail
         # with "unbound variable" instead of simply being empty.
         local cfgroot="" series="" base_def="" type_def="" board_def=""
+        local ported_from="" dropped_n=0
         series=$(kernel_series "$(lane_kver "${lane}")")
         cfgroot=$(fetch_ohos_config_repo "${lane}")
 
-        # OpenHarmony's config repository uses two conventions.
-        #
-        #   modern (5.10, 6.6):
-        #     linux-<s>/base_defconfig
-        #     linux-<s>/type/{standard,small}_defconfig
-        #     linux-<s>/<board>/arch/<arch>_defconfig        (complete)
-        #
-        #   legacy (4.19):  no base layer, and everything sits under arch/
-        #     linux-4.19/arch/<arch>/configs/{standard,small}_common_defconfig
-        #     linux-4.19/arch/<arch>/configs/<board>_<type>_defconfig
-        #
-        # Try the modern layout first, then the legacy one, so a lane against
-        # either generation resolves.
-        if [[ -f "${cfgroot}/linux-${series}/base_defconfig" \
-           || -f "${cfgroot}/linux-${series}/type/${OKCP_SYSTEM_TYPE}_defconfig" ]]; then
-            base_def="${cfgroot}/linux-${series}/base_defconfig"
-            type_def="${cfgroot}/linux-${series}/type/${OKCP_SYSTEM_TYPE}_defconfig"
-            # Two layouts, and OpenHarmony uses both:
-                #   linux-<s>/<board>/arch/<arch>_defconfig     rk3568, imx8mm, ...
-                #   linux-<s>/arch/<arch>/configs/<board>_<type>_defconfig   the qemu targets
-            if [[ -n "${board}" && -d "${cfgroot}/linux-${series}/${board}" ]]; then
-                board_def="${cfgroot}/linux-${series}/${board}/arch/${arch}_defconfig"
-                [[ -f "${board_def}" ]] || board_def=""
-            fi
-            if [[ -z "${board_def}" && -n "${board}" ]]; then
-                # The names in this layout are not derivable from the board
-                # name — the qemu targets are qemu-arm-linux_standard_defconfig
-                # and qemu-arm64-linux_standard_defconfig — so match by glob
-                # rather than by constructing a name.
-                local dir="${cfgroot}/linux-${series}/arch/${arch}/configs" cand
-                if [[ -d "${dir}" ]]; then
-                    for cand in "${dir}/${board}"*_defconfig; do
-                        if [[ -f "${cand}" ]]; then board_def="${cand}"; break; fi
-                    done
-                    # an exact <board>_defconfig wins over a longer match
-                    if [[ -f "${dir}/${board}_defconfig" ]]; then
-                        board_def="${dir}/${board}_defconfig"
-                    fi
+        # Pick the board configuration.  Native for this series if there is
+        # one; otherwise the newest configuration that exists for this board in
+        # any other series, which the port then has to resolve against this
+        # kernel's Kconfig.
+        if [[ -n "${board}" ]]; then
+            local kind path
+            while IFS=$'\t' read -r kind path; do
+                [[ -z "${path}" ]] && continue
+                if [[ "${kind}" == "native" ]]; then
+                    board_def="${path}"
+                    break
                 fi
-            fi
-        else
-            local legacy="${cfgroot}/linux-${series}/arch/${arch}/configs"
-            type_def="${legacy}/${OKCP_SYSTEM_TYPE}_common_defconfig"
-            if [[ -n "${board}" ]]; then
-                board_def="${legacy}/${board}_${OKCP_SYSTEM_TYPE}_defconfig"
+                if [[ -z "${ported_from}" ]]; then
+                    # keep looking: a native one later in the list still wins
+                    ported_from="${path}"
+                fi
+            done < <(board_config_candidates "${cfgroot}" "${board}" "${series}")
+            if [[ -z "${board_def}" && -n "${ported_from}" ]]; then
+                board_def="${ported_from}"
             fi
         fi
 
-        if [[ -n "${board_def}" && -f "${board_def}" ]] && config_is_full "${board_def}"; then
-            log_step "config: complete OpenHarmony board config for '${board}'"
-            base_desc="kernel_linux_config linux-${series} / ${board#"${cfgroot}"/linux-${series}/} (complete)"
-            mode="full"; cp "${board_def}" "${out}"
-        elif [[ -f "${base_def}" || -f "${type_def}" ]]; then
-            log_step "config: OpenHarmony config repo (linux-${series}, type/${OKCP_SYSTEM_TYPE})"
-            [[ -f "${base_def}" ]]  && frags+=("${base_def}")
-            [[ -f "${type_def}" ]]  && frags+=("${type_def}")
-            [[ -f "${board_def}" ]] && frags+=("${board_def}")
-            base_desc="kernel_linux_config linux-${series} (${#frags[@]} fragment(s))"
+        if [[ -n "${board_def}" ]]; then
+            if [[ -n "${ported_from}" && "${board_def}" == "${ported_from}" ]]; then
+                log_warn "no ${series} configuration for board '${board}'; porting from"
+                log_warn "  ${board_def#"${cfgroot}"/} and letting ${series} kconfig resolve it"
+                log_warn "  (symbols this kernel does not know are dropped and listed below)"
+                mode="full"
+                cp "${board_def}" "${out}"          # seed, resolved by olddefconfig
+            else
+                if config_is_full "${board_def}"; then
+                    mode="full"
+                    cp "${board_def}" "${out}"
+                else
+                    frags+=("${board_def}")
+                fi
+            fi
+            base_desc="kernel_linux_config ${board_def#"${cfgroot}"/}"
+        fi
+
+        # The base and type fragments still apply when the board layer is a
+        # fragment or absent; a complete board configuration supersedes them.
+        if [[ "${mode}" != "full" ]]; then
+            if [[ -f "${cfgroot}/linux-${series}/base_defconfig"                || -f "${cfgroot}/linux-${series}/type/${OKCP_SYSTEM_TYPE}_defconfig" ]]; then
+                [[ -f "${cfgroot}/linux-${series}/base_defconfig" ]] \
+                    && frags+=("${cfgroot}/linux-${series}/base_defconfig")
+                [[ -f "${cfgroot}/linux-${series}/type/${OKCP_SYSTEM_TYPE}_defconfig" ]] \
+                    && frags+=("${cfgroot}/linux-${series}/type/${OKCP_SYSTEM_TYPE}_defconfig")
+                [[ -n "${base_desc}" ]] || base_desc="kernel_linux_config linux-${series} (fragments)"
+            fi
+        fi
+
+        # The 4.19 generation keeps everything under arch/ instead.
+        if [[ "${mode}" != "full" && ! -d "${cfgroot}/linux-${series}/arch" ]]; then
+            local legacy="${cfgroot}/linux-${series}/arch/${arch}/configs"
+            if [[ -f "${legacy}/${OKCP_SYSTEM_TYPE}_common_defconfig" ]]; then
+                frags+=("${legacy}/${OKCP_SYSTEM_TYPE}_common_defconfig")
+                [[ -n "${base_desc}" ]] || base_desc="kernel_linux_config linux-${series} (legacy layout)"
+            fi
         fi
     fi
 
@@ -365,6 +444,19 @@ generate_config() {
 
     log_ok "config ready: ${out#"${OKCP_ROOT}"/} ($(wc -l < "${out}") lines)"
     log_info "base layer: ${base_desc:-adhoc override}"
+
+    # A ported board configuration loses whatever this kernel no longer has.
+    # Report it: a board configuration that silently shrank is a kernel that
+    # quietly lost a device feature.
+    if [[ -n "${board_def}" && "${board_def}" == "${ported_from}" ]]; then
+        local rep="${outdir}/DROPPED-SYMBOLS.txt"
+        dropped_n=$(report_dropped_symbols "${board_def}" "${out}" "${rep}")
+        log_warn "ported '${board}' from ${board_def#"${cfgroot}"/}: ${dropped_n} symbol(s) dropped"
+        if [[ "${dropped_n}" -gt 0 ]]; then
+            log_warn "  first 20: $(head -20 "${rep}.dropped" 2>/dev/null | tr '\n' ' ')"
+            log_warn "  full list: ${rep#"${OKCP_ROOT}"/}"
+        fi
+    fi
     config_facts "${out}" | sed 's/^/  /' | head -20
     printf '%s\n' "${out}"
 }

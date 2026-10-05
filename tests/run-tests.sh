@@ -74,7 +74,7 @@ while IFS=$'\t' read -r id kind repo host branch kver overlay status note; do
         [[ -n "${v}" ]] || { printf '  row %s: empty %s\n' "${id}" "${f}"; bad_rows=$((bad_rows+1)); }
     done
     case "${status}" in
-        primary|stable|legacy|experimental) ;;
+        primary|secondary|stable|legacy|experimental) ;;
         *) printf '  row %s: illegal status "%s"\n' "${id}" "${status}"; bad_rows=$((bad_rows+1)) ;;
     esac
     # an ohos lane must name a branch; an upstream lane must not claim one
@@ -833,9 +833,41 @@ while IFS=$'\t' read -r id kind repo host branch kver overlay status note board 
 done < "${OKCP_LANES_FILE}"
 assert_eq "every primary lane builds for a named board" "0" "${gen_primary}"
 
+# THE hard requirement: the main line is 6.6.101 for every device.  5.10 is a
+# side line and must never be primary, and no other kernel version may either.
+not_66=0
+while IFS=$'\t' read -r id kind repo host branch kver overlay status note board arch; do
+    [[ -z "${id}" || "${id}" == \#* ]] && continue
+    [[ "${status}" == "primary" ]] || continue
+    if [[ "${kver}" != "6.6.101" ]]; then
+        printf '  \033[0;31mFAIL\033[0m primary lane %s is %s, not 6.6.101\n' "${id}" "${kver}"
+        not_66=$((not_66+1))
+    fi
+done < "${OKCP_LANES_FILE}"
+assert_eq "the main line is 6.6.101 for every device" "0" "${not_66}"
+
+# And the 5.10 work must be filed as secondary, so it cannot be mistaken for
+# an alternative to the target.
+leaked=0
+while IFS=$'\t' read -r id kind repo host branch kver overlay status note board arch; do
+    [[ -z "${id}" || "${id}" == \#* ]] && continue
+    [[ "${kver}" == "5.10."* ]] || continue
+    [[ "${status}" == "primary" ]] && { printf '  \033[0;31mFAIL\033[0m 5.10 lane %s is marked primary\n' "${id}"; leaked=$((leaked+1)); }
+done < "${OKCP_LANES_FILE}"
+assert_eq "no 5.10 lane is marked primary" "0" "${leaked}"
+
 # Each OpenHarmony kernel series has a different set of boards; a lane pointing
 # at a board the series does not have would silently fall back to a generic
 # configuration, which is the failure this whole section exists to prevent.
+# The first "native" candidate for a board in a given series.
+native_board_config() {
+    local cfgroot=$1 board=$2 series=$3 kind path
+    while IFS=$'\t' read -r kind path; do
+        if [[ "${kind}" == "native" ]]; then printf '%s\n' "${path}"; return 0; fi
+    done < <(board_config_candidates "${cfgroot}" "${board}" "${series}")
+    return 1
+}
+
 assert_no_phantom_boards() {
     local bad=0 cand id kind repo host branch kver overlay status note board arch
     while IFS=$'\t' read -r id kind repo host branch kver overlay status note board arch; do
@@ -848,19 +880,21 @@ assert_no_phantom_boards() {
         series=$(kernel_series "${kver}")
         local probe
         if [[ -n "${OKCP_TEST_CONFIG_REPO:-}" && -d "${OKCP_TEST_CONFIG_REPO}" ]]; then
-            # Either layout counts: linux-<s>/<board>/..., or a defconfig under
-            # linux-<s>/arch/*/configs/ named after the board.
-            if [[ -d "${OKCP_TEST_CONFIG_REPO}/linux-${series}/${board}" ]]; then
+            # A board is legitimate if this series has one natively, or if any
+            # series has one to port from.  What is NOT acceptable is a board
+            # that appears nowhere, because then the build silently falls back
+            # to a generic configuration and the kernel is unusable.
+            if [[ -n "$(native_board_config "${OKCP_TEST_CONFIG_REPO}" "${board}" "${series}" 2>/dev/null)" ]]; then
                 continue
             fi
-            local found=0
-            for cand in "${OKCP_TEST_CONFIG_REPO}"/linux-${series}/arch/*/configs/"${board}"*_defconfig; do
-                if [[ -f "${cand}" ]]; then found=1; break; fi
-            done
-            if [[ ${found} -eq 0 ]]; then
-                printf '  \033[0;31mFAIL\033[0m %s: linux-%s has no board %s\n' "${id}" "${series}" "${board}" >&2
-                bad=$((bad+1))
+            if [[ -n "$(board_config_port_source "${OKCP_TEST_CONFIG_REPO}" "${board}" "${series}" 2>/dev/null)" ]]; then
+                printf '  \033[0;33m..\033[0m   %s: no native linux-%s config for %s; will port\n' \
+                       "${id}" "${series}" "${board}" >&2
+                continue
             fi
+            printf '  \033[0;31mFAIL\033[0m %s: no configuration for board %s in any series\n' \
+                   "${id}" "${board}" >&2
+            bad=$((bad+1))
         fi
     done < "${OKCP_LANES_FILE}"
     return "${bad}"
