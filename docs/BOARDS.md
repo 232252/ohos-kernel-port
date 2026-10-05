@@ -56,17 +56,40 @@ rk3568 一套 BSP 配置。**6.6 配置不全不是疏漏，是 6.6 本来就只
 | lane | 设备 | 6.6 配置来源 | 性质 |
 | --- | --- | --- | --- |
 | `ohos-7.0-6.6-rk3568` | hihope/rk3568（dayu200 系列） | **OpenHarmony 原生** | **真实出货设备** |
-| `ohos-7.0-6.6-hispark_taurus` | hisilicon/hispark_taurus（hi3516DV300，arm 32 位） | 从 5.10 移植 | **真实设备，OpenHarmony 只给了 5.10 配置** |
+| ~~`ohos-7.0-6.6-hispark_taurus`~~ | hisilicon/hispark_taurus（hi3516DV300） | 从 5.10 移植 | **已降级为 experimental：6.6 内核没有 HiSilicon 平台代码** |
 | `ohos-7.0-6.6-qemu-arm64` | QEMU arm64 virt | **OpenHarmony 原生** | 模拟/CI |
 | `ohos-7.0-6.6-qemu-arm` | QEMU arm virt | **OpenHarmony 原生** | 模拟/CI |
 | `ohos-7.0-6.6-myd_imx8mm` | MYD i.MX8M Mini | 从 5.10 移植 | 配置预留，无板无产品 |
 | `ohos-7.0-6.6-unionpi_tiger` | UnionPi Tiger | 从 5.10 移植 | 配置预留，无板无产品 |
 | `ohos-7.0-6.6-yangfan` | 扬帆板 | 从 5.10 移植 | 配置预留，无板无产品 |
 
+### 一个必须说清的限制：6.6 内核没有 HiSilicon 平台
+
+`hispark_taurus`（hi3516DV300）是真实设备，OpenHarmony 只给了它 5.10 配置，本可以
+做一次"实打实"的 6.6 补齐。**但 6.6 内核树里没有 HiSilicon 平台代码**：
+
+```
+kernel_linux_6.6   arch/arm/mach-hisi/**      不存在（只有 Documentation 提到 hisilicon）
+kernel_linux_5.10   hisi / hi3516 相关路径       321 处
+```
+
+移植配置补不了缺失的 BSP。要让 hi3516DV300 跑 6.6，得把整个 HiSilicon 平台移植到
+6.6 —— 那是内核平台移植，不是配置移植。该 lane 因此降级为 `experimental`，并在
+矩阵的 note 里写明原因，避免它被当成可交付产物。
+
+同时修了一个真实缺陷：CI 只装了 `gcc-aarch64-linux-gnu`，而 ARCH=arm 的 lane 会报
+
+```
+aarch64-linux-gnu-gcc: error: unrecognized command-line option '-mtp=cp15'
+aarch64-linux-gnu-gcc: error: unrecognized argument in option '-mabi=aapcs-linux'
+```
+
+现已一并安装 `gcc-arm-linux-gnueabihf` / `g++-arm-linux-gnueabihf`。
+
 ### 移植的代价，必须说清
 
-`hispark_taurus` 是真实设备但 OpenHarmony 只提供了 5.10 配置，所以它的 6.6 移植
-是**实打实**的补齐。另外三个是只有配置、没有板也没有产品的预留项。
+另外三个（`myd_imx8mm` / `unionpi_tiger` / `yangfan`）是只有配置、没有板也没有产品的
+预留项。
 
 移植做法是发行版换内核系列的标准做法：拿 5.10 的板级配置做种子，交给 6.6 的 kconfig
 解析。**躲不掉的代价**是新内核不认识的符号会被丢掉。所以每条移植 lane 都会写出
