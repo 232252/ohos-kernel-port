@@ -237,15 +237,23 @@ package_standalone() {
     #-- 4. boot.img ------------------------------------------------------
     # Delegated to pack.sh:make_boot_img, which owns the backend choice and,
     # more importantly, refuses to pass an AOSP-format image off as a
-    # flashable OpenHarmony one.  Here we only supply the ramdisk hint.
-    if [[ -f "${outdir}/Image" ]]; then
-        if [[ -f "${OKCP_BOOTIMG_RAMDISK}" ]]; then
-            OKCP_BOOTIMG_RAMDISK_PATH="${OKCP_BOOTIMG_RAMDISK}" \
+    # flashable OpenHarmony one.
+    #
+    # OKCP_BOOTIMG_RAMDISK used to be read here but never defined anywhere, so
+    # under `set -u` this block killed the script silently, right after the
+    # headers were staged and before the manifest was written.  The build
+    # reported success and the release step then found an artifact directory
+    # with no MANIFEST.txt and no record of why.
+    if [[ -s "${outdir}/Image" ]]; then
+        local ramdisk="${OKCP_BOOTIMG_RAMDISK:-}"
+        if [[ -n "${ramdisk}" && -f "${ramdisk}" ]]; then
+            OKCP_BOOTIMG_RAMDISK_PATH="${ramdisk}" \
                 make_boot_img "$(basename -- "$(dirname -- "${outdir}")")" "${outdir}" || true
         else
-            log_warn "no ramdisk at ${OKCP_BOOTIMG_RAMDISK}; a kernel-only build cannot"
-            log_warn "  produce a bootable OpenHarmony image, so boot.img is skipped"
-            log_warn "  (the raw Image is still available in this directory)"
+            log_warn "no ramdisk supplied (set OKCP_BOOTIMG_RAMDISK); a kernel-only"
+            log_warn "  build cannot produce a bootable OpenHarmony image, so"
+            log_warn "  boot.img is skipped and the raw Image is left in place"
+            log_warn "  see docs/BOOT-IMAGE.md"
         fi
     fi
 

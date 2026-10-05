@@ -826,6 +826,35 @@ else
     printf '  \033[0;31mFAIL\033[0m packaging reported success with no kernel image (rc=%s)\n' "${pack_rc}"
 fi
 
+# And the whole path must run to completion and write a MANIFEST.  Reading an
+# undefined variable under `set -u` killed the packer silently right after the
+# headers were staged, so the artifact directory had no manifest and the
+# release step could not tell what had happened.
+mkdir -p "${work}/out/ohos-7.0-5.10/arch/arm64/boot/dts" "${work}/src/include"
+printf 'VERSION = 5\nPATCHLEVEL = 10\nSUBLEVEL = 210\nall:\n\t@:\n' > "${work}/src/Makefile"
+head -c 65536 /dev/urandom > "${work}/out/ohos-7.0-5.10/arch/arm64/boot/Image"
+head -c 512 /dev/zero > "${work}/out/ohos-7.0-5.10/arch/arm64/boot/dts/rk3568.dtb"
+printf 'exported\n' > "${work}/out/ohos-7.0-5.10/Module.symvers"
+rm -rf "${work}/artifacts"
+pack_out=$(OKCP_WORKDIR="${work}" bash -c '
+    set -euo pipefail
+    source "'"${ROOT}"'/scripts/lib/common.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/matrix.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/package.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/pack.sh" 2>/dev/null
+    package_kernel ohos-7.0-5.10 "'"${work}"'/src" "'"${work}"'/artifacts"
+    write_artifact_manifest ohos-7.0-5.10 "'"${work}"'/src" "'"${work}"'/artifacts" 5.10.210
+' 2>&1)
+pack_rc=$?
+if [[ ${pack_rc} -eq 0 && -s "${work}/artifacts/MANIFEST.txt" && -s "${work}/artifacts/Image" \
+      && -s "${work}/artifacts/dtbs/rk3568.dtb" ]]; then
+    PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   packaging completes and writes Image, dtbs and MANIFEST\n'
+else
+    FAIL=$((FAIL+1)); FAILURES+=("packaging did not complete (rc=${pack_rc}, manifest=$([[ -f "${work}/artifacts/MANIFEST.txt" ]] && echo y || echo n))")
+    printf '  \033[0;31mFAIL\033[0m packaging did not complete (rc=%s)\n' "${pack_rc}"
+    printf '%s\n' "${pack_out}" | tail -4 | sed 's/^/        /'
+fi
+
 # and with an Image present it must collect it.  lane_outdir is
 # <workdir>/out/<lane>, so the Image goes under the lane directory.
 mkdir -p "${work}/out/ohos-7.0-5.10/arch/arm64/boot"
