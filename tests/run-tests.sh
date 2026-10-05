@@ -313,7 +313,8 @@ for f in README.md README.cn.md; do
 done
 
 for f in docs/VERSION-MATRIX.md docs/PORTING-NOTES.md docs/BOOT-IMAGE.md docs/COMPLIANCE.md \
-         docs/BOARDS.md configs/README.md; do
+         docs/BOARDS.md configs/README.md \
+         docs/research-OHOS-BOARDS.md docs/research-BRANCH-6.6-CONFIGS.md; do
     if [[ -s "${ROOT}/${f}" ]]; then
         PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   %s exists\n' "${f}"
     else

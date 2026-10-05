@@ -16,25 +16,62 @@ pin/mux、没有触摸控制器。rk3568 那份 6193 行的配置里有 24 个 `
 同样是「板型族 × 内核版本」分别出 defconfig，发布 `5.10-rk35xx`、`6.6-stable` 这类
 按设备分开的内核。
 
+## OpenHarmony 7.0 里真实存在的设备（核实结论）
+
+这一节是查 OpenHarmony 7.0 manifest 与 `kernel_linux_config` 后得到的**事实**，
+不是我推测的。7.0 相对 6.1 的板型变化**只有"新增 UNISOC p7885（wukong100）"一件事**。
+
+| 产品 | 板型仓 | SoC | 内核仓 | 内核版本 | 配置路径 |
+| --- | --- | --- | --- | --- | --- |
+| `hihope/rk3568` | `device/board/hihope` | `rockchip/rk3568` | `kernel_linux_6.6` | **6.6.101** | `linux-6.6/rk3568/arch/arm64_defconfig` |
+| `hihope/rk3568_mini_system` | 同上 | 同上 | 同上 | 6.6.101 | 同上 |
+| `hihope/2in1_core_system` | 同上 | 同上 | 同上 | 6.6.101 | 同上 |
+| `hihope/default_core_system` | 同上 | 同上 | 同上 | 6.6.101 | 同上 |
+| `hihope/ipcamera_core_system` | 同上 | 同上 | 同上 | 6.6.101 | 同上 |
+| `hisilicon/hispark_taurus` | `device/board/hisilicon` | `hi3516dv300` | `kernel_linux_5.10` | 5.10.210 | `linux-5.10/arch/arm/configs/hispark_taurus_standard_defconfig` |
+| qemu `arm_virt` / `arm64_virt` | `device/qemu` | — | 6.6 / 5.10 | 6.6.101 | `linux-6.6/arch/arm64/configs/qemu-arm-linux_standard_defconfig` |
+| `revoview/wukong100` | `device/board/revoview` | `unisoc/p7885` | — | — | **不可构建**：其 `//kernel_unisoc_p7885` 不在 manifest 内，gitcode 403/404 |
+
+**关键一条**：`build@7.0/ohos/kernel/kernel.gni:13-15` 的全局默认是
+`linux_kernel_version = "linux-6.6"`，而我扫过 `device_board_hihope / hisilicon /
+revoview / device_qemu / vendor_*` 全部 `*.gni`，**没有任何一处 override**。
+也就是说 7.0 里凡是没硬编码内核版本的板子，实际拿到的就是 6.6 —— 而 6.6 当时只有
+rk3568 一套 BSP 配置。**6.6 配置不全不是疏漏，是 6.6 本来就只服务于 rk3568。**
+
+### 需要澄清的两点
+
+* **树莓派 4B、香橙派 5Plus/4B 都不在 7.0 的 manifest 与配置仓里**。全目录搜索唯一
+  命中是 `kernel_linux_config/README.md:64` 里的举例文字。之前把 rk3568 说成
+  "香橙派 5 Plus 一类"是不准确的：7.0 真正的 rk3568 产品线是 `hihope/rk3568`（dayu200 系列）。
+* **`imx8mm` / `unionpi_tiger` / `yangfan` 只有配置，没有板、没有产品、没有门禁**，
+  属于社区/移植预留。为它们做的 6.6 配置移植是"让预留配置可用"，不是"补齐出货设备"。
+
 ## 主线：所有设备都是 6.6.101
 
 **这是本项目的硬要求**：主线只有 6.6.101，一个内核版本走到底。5.10 只作为 `secondary`
-支线存在（那是 OpenHarmony 今天真正出货的 LTS 内核），不作为 6.6 的替代方案。
+支线存在（那是 OpenHarmony 许多设备今天实际出货的 LTS 内核），不作为 6.6 的替代方案。
 
-OpenHarmony 在 `OpenHarmony-7.0-Release` 上只为 **rk3568** 提供了 6.6 板级配置，
-其余板型只有 5.10 配置。要让所有设备都跑 6.6.101，就必须由本项目把那些板级配置
-**移植**到 6.6：拿 5.10 的板级配置做种子，交给 6.6 的 kconfig 解析，然后把
-**这个内核不再认识的符号全部列出来**（`DROPPED-SYMBOLS.txt`）——静默缩水比
-没有内核更糟。
+7 条主线 lane 全部是 6.6.101，全部按板型：
 
-| 板型 | 6.6 配置来源 | 备注 |
-| --- | --- | --- |
-| `rk3568` | **OpenHarmony 原生** | `linux-6.6/rk3568/arch/arm64_defconfig` |
-| `qemu-arm64` / `qemu-arm` | **OpenHarmony 原生** | `linux-6.6/arch/*/configs/qemu-arm*-linux_standard_defconfig` |
-| `myd_imx8mm` | 从 `linux-5.10/arch/arm64/configs/myd_imx8mm_defconfig` 移植 | |
-| `unionpi_tiger` | 从 `linux-5.10/unionpi_tiger/arch/arm64_defconfig` 移植 | |
-| `yangfan` | 从 `linux-5.10/yangfan/arch/arm64_defconfig` 移植 | |
-| `hispark_taurus` | 从 `linux-5.10/hispark_taurus/arch/arm_defconfig` 移植 | **arm 32 位** |
+| lane | 设备 | 6.6 配置来源 | 性质 |
+| --- | --- | --- | --- |
+| `ohos-7.0-6.6-rk3568` | hihope/rk3568（dayu200 系列） | **OpenHarmony 原生** | **真实出货设备** |
+| `ohos-7.0-6.6-hispark_taurus` | hisilicon/hispark_taurus（hi3516DV300，arm 32 位） | 从 5.10 移植 | **真实设备，OpenHarmony 只给了 5.10 配置** |
+| `ohos-7.0-6.6-qemu-arm64` | QEMU arm64 virt | **OpenHarmony 原生** | 模拟/CI |
+| `ohos-7.0-6.6-qemu-arm` | QEMU arm virt | **OpenHarmony 原生** | 模拟/CI |
+| `ohos-7.0-6.6-myd_imx8mm` | MYD i.MX8M Mini | 从 5.10 移植 | 配置预留，无板无产品 |
+| `ohos-7.0-6.6-unionpi_tiger` | UnionPi Tiger | 从 5.10 移植 | 配置预留，无板无产品 |
+| `ohos-7.0-6.6-yangfan` | 扬帆板 | 从 5.10 移植 | 配置预留，无板无产品 |
+
+### 移植的代价，必须说清
+
+`hispark_taurus` 是真实设备但 OpenHarmony 只提供了 5.10 配置，所以它的 6.6 移植
+是**实打实**的补齐。另外三个是只有配置、没有板也没有产品的预留项。
+
+移植做法是发行版换内核系列的标准做法：拿 5.10 的板级配置做种子，交给 6.6 的 kconfig
+解析。**躲不掉的代价**是新内核不认识的符号会被丢掉。所以每条移植 lane 都会写出
+`DROPPED-SYMBOLS.txt`，构建日志直接报"丢了几个符号"和前 20 个名字。
+**板级配置悄悄缩水，比没有内核更糟**，因为你会以为设备特性都在。
 
 ## 支线：5.10.210（secondary，非主线）
 
