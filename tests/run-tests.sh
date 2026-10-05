@@ -95,10 +95,10 @@ assert_eq "lane ids are unique" "" "${dupes}"
 section "lane resolution"
 #==============================================================================
 
-assert_eq "primary resolves to the shipping LTS lane" "ohos-7.0-5.10" "$(lane_resolve primary)"
-assert_eq "latest resolves to the same"           "ohos-7.0-5.10" "$(lane_resolve latest)"
+assert_eq "primary resolves to the 6.6.101 lane"  "ohos-7.0-6.6" "$(lane_resolve primary)"
+assert_eq "latest resolves to the same"           "ohos-7.0-6.6" "$(lane_resolve latest)"
 assert_eq "exact id"                              "ohos-7.0-5.10" "$(lane_resolve ohos-7.0-5.10)"
-assert_eq "by OpenHarmony branch leads with the LTS lane" "ohos-7.0-5.10" "$(lane_resolve ohos@OpenHarmony-7.0-Release)"
+assert_eq "by OpenHarmony branch"                 "ohos-7.0-6.6"  "$(lane_resolve ohos@OpenHarmony-7.0-Release)"
 assert_eq "by version@branch"                     "ohos-7.0-6.6"  "$(lane_resolve 6.6.101@OpenHarmony-7.0-Release)"
 assert_eq "by kernel version"                     "ohos-7.0-5.10" "$(lane_resolve 5.10.210)"
 assert_true "an unknown selector is rejected"     bash -c "source '${ROOT}/scripts/lib/matrix.sh' >/dev/null 2>&1; lane_resolve no-such-lane >/dev/null 2>&1; [[ \$? -ne 0 ]]"
@@ -109,10 +109,13 @@ assert_true "an unknown selector is rejected"     bash -c "source '${ROOT}/scrip
 _primary=$(lane_resolve primary)
 assert_eq "the primary lane targets the 7.0 release branch" \
           "OpenHarmony-7.0-Release" "$(lane_ohos_branch "${_primary}")"
-assert_eq "the primary lane is the shipping LTS kernel" \
-          "kernel_linux_5.10" "$(lane_repo "${_primary}")"
-assert_eq "the primary lane carries Linux 5.10.210" \
-          "5.10.210" "$(lane_kver "${_primary}")"
+# 6.6.101 is the fixed target of this project, so the default lane is the 6.6
+# tree even though the 5.10 LTS lane needs fewer patches.  Shipping the easier
+# lane first and calling it the target would be moving the goalposts.
+assert_eq "the primary lane is the 6.6 tree" \
+          "kernel_linux_6.6" "$(lane_repo "${_primary}")"
+assert_eq "the primary lane carries Linux 6.6.101" \
+          "6.6.101" "$(lane_kver "${_primary}")"
 assert_eq "the primary lane builds an arm64 kernel" \
           "arm64" "$(config_arch "${_primary}")"
 
@@ -225,7 +228,7 @@ assert_contains "list-lanes shows the 5.10.210 lane"  "${cli_out}" "5.10.210"
 assert_contains "list-lanes reports a total"           "${cli_out}" "Total:"
 
 assert_contains "show resolves the branch"  "$("${ROOT}/ohos-kb" show primary 2>&1)" "OpenHarmony-7.0-Release"
-assert_contains "show resolves the version"  "$("${ROOT}/ohos-kb" show primary 2>&1)" "5.10.210"
+assert_contains "show resolves the version"  "$("${ROOT}/ohos-kb" show primary 2>&1)" "6.6.101"
 assert_contains "doctor reports the lane count" "$("${ROOT}/ohos-kb" doctor 2>&1)" "lanes defined"
 assert_contains "version prints"              "$("${ROOT}/ohos-kb" version 2>&1)" "ohos-kb"
 

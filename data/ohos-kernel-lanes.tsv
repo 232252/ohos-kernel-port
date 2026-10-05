@@ -21,8 +21,8 @@
 #   note          free text
 #
 # --- OpenHarmony native kernel lanes (verified 2026-10-04) --------------------
-ohos-7.0-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS kernel - the lane OpenHarmony actually ships; needs only patches/linux-5.10.y, so this is the first release target
-ohos-7.0-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	MAIN TARGET - OpenHarmony 7.0; needs patches/linux-6.6.y, because the 6.6 tree is missing include/linux/{xpm_types,memcg_policy,mm_purgeable}.h that the 5.10 tree has
+ohos-7.0-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	MAIN TARGET - OpenHarmony 7.0 / Linux 6.6.101; needs patches/linux-6.6.y, because the 6.6 tree is missing headers the 5.10 tree carries
+ohos-7.0-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS kernel - secondary lane; needs only patches/linux-5.10.y
 ohos-7.0b-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Beta1	6.6.101	ohos-6.6	stable	OpenHarmony 7.0 beta
 ohos-6.1-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.1-Release	6.6.101	ohos-6.6	stable	OpenHarmony 6.1
 ohos-6.1lts-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.1-LTS	6.6.101	ohos-6.6	stable	OpenHarmony 6.1 LTS
