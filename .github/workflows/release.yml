@@ -38,6 +38,13 @@ on:
 
 permissions:
   contents: write
+  # Needed to push the -src tag: that tag points at a commit containing
+  # .github/workflows/release.yml, and GitHub refuses to let a token without
+  # this permission create a ref that touches a workflow file:
+  #   ! [remote rejected] ... (refusing to allow a GitHub App to create or
+  #   update workflow `.github/workflows/release.yml` without `workflows`
+  #   permission)
+  workflows: write
 
 concurrency:
   group: release-${{ inputs.tag }}

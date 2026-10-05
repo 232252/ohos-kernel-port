@@ -798,6 +798,56 @@ else
 fi
 
 #==============================================================================
+section "packaging"
+#==============================================================================
+
+# The packer read the build output from ${srcdir}/out while the build writes
+# out-of-tree to lane_outdir, found nothing, and reported success.  A release
+# went out carrying licences and kernel headers and no kernel at all.  So:
+# packaging a tree with no Image must fail, loudly.
+work=$(make_tmpdir)
+mkdir -p "${work}/src/arch/arm64" "${work}/out" "${work}/artifacts"
+printf 'VERSION = 5\nPATCHLEVEL = 10\nSUBLEVEL = 210\nall:\n\t@:\n' > "${work}/src/Makefile"
+mkdir -p "${work}/src/include" && : > "${work}/src/include/linux"
+# point lane_outdir at this scratch tree so the packer looks here
+pack_out=$(OKCP_WORKDIR="${work}" bash -c '
+    set -uo pipefail
+    source "'"${ROOT}"'/scripts/lib/common.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/matrix.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/package.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/pack.sh" 2>/dev/null
+    package_kernel ohos-7.0-5.10 "'"${work}"'/src" "'"${work}"'/artifacts"
+' 2>&1)
+pack_rc=$?
+if [[ ${pack_rc} -ne 0 ]] && grep -q "no kernel image found" <<< "${pack_out}"; then
+    PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   packaging without a kernel image fails loudly\n'
+else
+    FAIL=$((FAIL+1)); FAILURES+=("packaging reported success with no kernel image (rc=${pack_rc})")
+    printf '  \033[0;31mFAIL\033[0m packaging reported success with no kernel image (rc=%s)\n' "${pack_rc}"
+fi
+
+# and with an Image present it must collect it.  lane_outdir is
+# <workdir>/out/<lane>, so the Image goes under the lane directory.
+mkdir -p "${work}/out/ohos-7.0-5.10/arch/arm64/boot"
+head -c 4096 /dev/zero > "${work}/out/ohos-7.0-5.10/arch/arm64/boot/Image"
+rm -rf "${work}/artifacts"
+pack_out=$(OKCP_WORKDIR="${work}" bash -c '
+    set -uo pipefail
+    source "'"${ROOT}"'/scripts/lib/common.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/matrix.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/package.sh" 2>/dev/null
+    source "'"${ROOT}"'/scripts/lib/pack.sh" 2>/dev/null
+    package_kernel ohos-7.0-5.10 "'"${work}"'/src" "'"${work}"'/artifacts"
+' 2>&1)
+if [[ -s "${work}/artifacts/Image" ]]; then
+    PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   packaging collects the Image from the kbuild directory\n'
+else
+    FAIL=$((FAIL+1)); FAILURES+=("packaging did not collect the Image")
+    printf '  \033[0;31mFAIL\033[0m packaging did not collect the Image\n'
+fi
+rm -rf "${work}"
+
+#==============================================================================
 section "tree auditors"
 #==============================================================================
 

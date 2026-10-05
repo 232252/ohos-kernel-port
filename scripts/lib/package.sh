@@ -183,9 +183,15 @@ collect_kernel_headers() {
 #------------------------------------------------------ standalone backend
 package_standalone() {
     local lane=$1 srcdir=$2 outdir=${3:-${OKCP_ARTIFACT_DIR}/${lane}}
-    local kbuild="${srcdir}/${OKCP_KBUILD_OUT:-out}"
+    # The build is out-of-tree (kbuild_args passes O=), so the images are under
+    # the kbuild output directory, not under the source tree.  Reading
+    # ${srcdir}/out instead found nothing — and the packer reported success,
+    # so a release went out with headers and licences but no kernel.
+    local kbuild
+    kbuild=$(lane_outdir "${lane}")
     local arch=${OKCP_TARGET_ARCH:-arm64}
     mkdir -p "${outdir}"
+    log_debug "kbuild output: ${kbuild}"
 
     #-- 1. raw kernel artifacts -------------------------------------------
     local f dst
@@ -242,6 +248,16 @@ package_standalone() {
             log_warn "  (the raw Image is still available in this directory)"
         fi
     fi
+
+    # A packer that cannot find the kernel must say so.  Reporting success
+    # without an Image is how a header-only artefact set gets published.
+    if [[ ! -s "${outdir}/Image" && ! -s "${outdir}/Image.gz" ]]; then
+        log_error "no kernel image found under ${kbuild}/arch/${arch}/boot/"
+        log_error "  the build step should have produced Image; check that it"
+        log_error "  ran and that OKCP_OUT_ROOT is where the packer is looking"
+        die "refusing to report a successful package with no kernel in it"
+    fi
+    log_ok "collected $(du -h "${outdir}/Image" 2>/dev/null | cut -f1) Image"
 
     printf '%s\n' "${outdir}"
 }
