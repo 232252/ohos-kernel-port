@@ -38,13 +38,6 @@ on:
 
 permissions:
   contents: write
-  # Needed to push the -src tag: that tag points at a commit containing
-  # .github/workflows/release.yml, and GitHub refuses to let a token without
-  # this permission create a ref that touches a workflow file:
-  #   ! [remote rejected] ... (refusing to allow a GitHub App to create or
-  #   update workflow `.github/workflows/release.yml` without `workflows`
-  #   permission)
-  workflows: write
 
 concurrency:
   group: release-${{ inputs.tag }}
@@ -137,11 +130,31 @@ jobs:
       - name: Push the source tag (required by GPL-2.0 section 3)
         run: |
           set -euo pipefail
+          # NOTE: this step is expected to be refused on a stock
+          # GITHUB_TOKEN.  The -src tag points at a commit that contains
+          # .github/workflows/release.yml, and GitHub will not let a token push
+          # a ref that touches a workflow file:
+          #   ! [remote rejected] ... (refusing to allow a GitHub App to
+          #   create or update workflow `.github/workflows/release.yml`
+          #   without `workflows` permission)
+          # There is no `workflows` key in the `permissions:` block, so this
+          # cannot be granted to GITHUB_TOKEN at all.  Pushing the tag needs a
+          # token with the `workflow` scope, which only a maintainer holds.
+          # The step therefore checks and reports rather than assuming, and the
+          # verification below refuses to pass while the tag is missing.
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a '${{ inputs.tag }}-src' -m \
-            "Corresponding source for ${{ inputs.tag }} (GPL-2.0 section 3)"
-          git push origin '${{ inputs.tag }}-src'
+          if [[ -n "${{ secrets.RELEASE_PUSH_TOKEN }}" ]]; then
+            git tag -a '${{ inputs.tag }}-src' -m \
+              "Corresponding source for ${{ inputs.tag }} (GPL-2.0 section 3)"
+            git push origin '${{ inputs.tag }}-src'
+            echo "pushed with RELEASE_PUSH_TOKEN"
+          else
+            echo "::notice::RELEASE_PUSH_TOKEN is not set, so this run cannot create"
+            echo "::notice::the -src tag.  A maintainer must push it with a token that"
+            echo "::notice::has the workflow scope before the release satisfies section 3."
+            echo "::notice::  git tag -a '${{ inputs.tag }}-src' -m 'source' && git push origin '${{ inputs.tag }}-src'"
+          fi
 
       - name: Create the release
         uses: softprops/action-gh-release@v2
