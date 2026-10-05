@@ -189,7 +189,9 @@ jobs:
           TOOLCHAIN: ${{ inputs.toolchain || 'host' }}
         run: |
           set -euo pipefail
-          args=(all "${{ matrix.lane }}" --toolchain "$TOOLCHAIN" --type "$SYSTEM_TYPE")
+          # --keep-going: this tree references files that were never published,
+          # and make -k reports all of them in one run instead of one per CI run.
+          args=(all "${{ matrix.lane }}" --toolchain "$TOOLCHAIN" --type "$SYSTEM_TYPE" --keep-going)
           [[ -n "$BOARD" ]] && args+=(--board "$BOARD")
           ./ohos-kb "${args[@]}" 2>&1 | tee build.log
           # Make the artifact directory predictable for the upload step.

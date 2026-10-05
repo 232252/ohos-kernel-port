@@ -639,7 +639,8 @@ if [[ ${patch_count} -gt 0 ]] && have git; then
     repro=$(make_tmpdir)
     emptyhome=$(make_tmpdir)
     got_real=1
-    for f in fs/Kconfig fs/proc/Makefile security/Kconfig security/Makefile; do
+    for f in fs/Kconfig fs/proc/Makefile security/Makefile security/Kconfig \
+             include/linux/mm_types.h; do
         if ! http_get \
             "https://api.gitcode.com/api/v5/repos/openharmony/kernel_linux_6.6/contents/${f}?ref=OpenHarmony-7.0-Release" \
             "${repro}/blob.json" 2>/dev/null \
@@ -688,9 +689,15 @@ if [[ ${patch_count} -gt 0 ]] && have git; then
                     problems=$((problems+1))
                 fi
             done
+            # (d) and both shim headers must be in place
+            for h in include/linux/xpm_types.h include/linux/memcg_policy.h; do
+                if [[ ! -f "${repro}/${h}" ]]; then
+                    printf '        shim missing after patching: %s\n' "${h}"; problems=$((problems+1))
+                fi
+            done
             if [[ ${problems} -eq 0 ]]; then
                 PASS=$((PASS+1))
-                printf '  \033[0;32mok\033[0m   the patch clears all 5 dangling sources, keeps their symbols, drops their build hooks\n'
+                printf '  \033[0;32mok\033[0m   the patches clear all 5 dangling sources, keep their symbols, drop their build hooks\n'
             else
                 FAIL=$((FAIL+1)); FAILURES+=("the patch left ${problems} dangling-source issue(s)")
                 printf '  \033[0;31mFAIL\033[0m the patch left %s issue(s)\n' "${problems}"

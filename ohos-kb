@@ -87,6 +87,8 @@ BUILD OPTIONS
     --out DIR             artifact directory             [<workdir>/artifacts/<lane>]
     --fetch-attempts N    clone retries per mirror       [10]
     --keep-source         do not wipe the source tree on failure
+    --keep-going          build with 'make -k' so one run reports every
+                          error, not just the first
     --debug               verbose logging
 
 EXAMPLES
@@ -386,6 +388,7 @@ main() {
             --out)         OPT_OUT=$(abspath "${2:-}"); shift 2 ;;
             --fetch-attempts) OKCP_FETCH_ATTEMPTS=${2:-10}; shift 2 ;;
             --keep-source)  OKCP_KEEP_SOURCE=1; shift ;;
+            --keep-going)   OKCP_KEEP_GOING=1; shift ;;
             --debug)        OKCP_DEBUG=1; shift ;;
             -h|--help)      usage; exit 0 ;;
             -*)             die "unknown option: $1 (try: ohos-kb help)" ;;

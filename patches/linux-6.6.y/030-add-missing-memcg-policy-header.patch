@@ -1,0 +1,79 @@
+From 5695af68a7379efbaa05a5da9f76bc464debf024 Mon Sep 17 00:00:00 2001
+From: ohos-kernel-port contributors <232252@users.noreply.github.com>
+Date: Mon, 5 Oct 2026 00:50:28 +0800
+Subject: [PATCH] include: add the missing memcg_policy.h so memcontrol.h can
+ be compiled
+
+SPDX-License-Identifier: GPL-2.0-only
+
+Baseline: gitcode.com/openharmony/kernel_linux_6.6
+Branch:   OpenHarmony-7.0-Release
+Commit:   f4b61510491aa20f7f57fbbc5efc754083c92212
+Found by: tools/audit-includes.py
+
+include/linux/memcg_policy.h is not tracked in the repository, and
+include/linux/memcontrol.h includes it unconditionally:
+
+    include/linux/memcontrol.h:24:10: fatal error: linux/memcg_policy.h:
+        No such file or directory
+
+Four more files include it, all in mm/: memcg_reclaim.c, vmscan.c, zswapd.c and
+zswapd_control.c.  memcontrol.h is core and is compiled by every build, so this
+is not conditional and cannot be configured away.
+
+Unlike <linux/xpm_types.h>, which has to supply struct definitions because
+mm_types.h embeds them by value, nothing here is needed: all four users include
+the header and then use no symbol from it, and a tree-wide search finds no
+memcg policy definition to supply.  An empty guarded header is the whole fix.
+
+This is the third of the same class in this tree, after the five dangling
+Kconfig sources and <linux/xpm_types.h>.  All three are OpenHarmony additions
+whose implementations were not published; tools/audit-kconfig.py and
+tools/audit-includes.py find them in one pass each so a build does not have to
+discover them one at a time.
+
+Upstream: no equivalent; Linux v6.6 has no memcg_policy.h.
+Licence: GPL-2.0-only, same as the tree.
+---
+ include/linux/memcg_policy.h | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+ create mode 100644 include/linux/memcg_policy.h
+
+diff --git a/include/linux/memcg_policy.h b/include/linux/memcg_policy.h
+new file mode 100644
+index 0000000..e0f5175
+--- /dev/null
++++ b/include/linux/memcg_policy.h
+@@ -0,0 +1,29 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * Compatibility shim for the OpenHarmony memcg policy glue.
++ *
++ * include/linux/memcontrol.h includes this header unconditionally, and so do
++ * mm/memcg_reclaim.c, mm/vmscan.c, mm/zswapd.c and mm/zswapd_control.c, but
++ * the file is not tracked in the repository:
++ *
++ *     CC      arch/arm64/kernel/asm-offsets.s
++ *     include/linux/memcontrol.h:24:10: fatal error: linux/memcg_policy.h:
++ *         No such file or directory
++ *
++ * Nothing in this tree declares or defines anything that this header is
++ * supposed to declare: the four users above include it and use no symbol from
++ * it, and a tree-wide search for a memcg policy definition finds nothing.  So
++ * the include is a leftover of a feature whose implementation was not
++ * published, and an empty guarded header is the whole of the fix.
++ *
++ * Unlike <linux/xpm_types.h>, which genuinely needs struct definitions because
++ * mm_types.h embeds them, this one needs nothing — the include resolves and
++ * the build continues.
++ *
++ * When OpenHarmony lands the memcg policy work, delete this file and the
++ * include lines with it.
++ */
++#ifndef _LINUX_MEMCG_POLICY_H
++#define _LINUX_MEMCG_POLICY_H
++
++#endif /* _LINUX_MEMCG_POLICY_H */
+-- 
+2.39.5
+

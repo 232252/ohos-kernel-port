@@ -116,9 +116,28 @@ build_kernel() {
         fi
     fi
 
+    # OKCP_KEEP_GOING=1 adds make -k, which keeps building after an error
+    # instead of stopping at the first one.  This tree turns out to reference
+    # several files that were never published, and without -k each one costs a
+    # ten-minute CI round trip to discover.  With it, one run reports them all.
+    if [[ -n "${OKCP_KEEP_GOING:-}" ]]; then
+        args+=(-k)
+        log_info "diagnosis mode: make -k, so every error is reported in this run"
+    fi
+
     if ! ( cd "${srcdir}" && make "${args[@]}" Image ) > >(tee "${outdir}/build.log") 2>&1; then
         log_error "kernel build FAILED. Last 40 lines of ${outdir}/build.log:"
         tail -40 "${outdir}/build.log" >&2 || true
+        # A missing file is the common failure here, so collect them all rather
+        # than leaving the reader to grep.
+        if grep -q "No such file or directory" "${outdir}/build.log"; then
+            log_error "--- every missing file this build reported ---"
+            grep -oE "[^ :]+: (fatal error: [^:]+|No such file or directory)" "${outdir}/build.log" \
+                | sort -u | sed 's/^/    /' >&2
+            log_error "---------------------------------------"
+            log_error "  add a shim or remove the reference, then re-run with"
+            log_error "  --keep-going to see what else is missing."
+        fi
         return 1
     fi
 

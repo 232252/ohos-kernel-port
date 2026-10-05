@@ -45,13 +45,67 @@ ANGLE_RE = re.compile(r'^\s*#\s*include\s+<(?P<path>[^>]+)>', re.M)
 QUOTED_RE = re.compile(r'^\s*#\s*include\s+"(?P<path>[^"]+)"', re.M)
 
 SOURCE_SUFFIXES = (".c", ".h", ".S")
+
+# Trees that are host builds, not the kernel: their includes resolve against
+# the host toolchain (Qt, Python, Perl) or against vendored third-party trees,
+# none of which a kernel build ever needs.  Auditing them produced 1130 false
+# positives, which makes an auditor worse than useless.
+NOT_KERNEL_TREES = ("tools/", "scripts/", "samples/", "Documentation/",
+                    "LICENSES/", "rust/", "net-next/")
+
+# What counts as "this include will be reached by our build".
+#
+# Without a parsed .config, a whole-tree include audit cannot be accurate: a
+# header included only from, say, arch/arm64/hyperv/mshyperv.c is absent from
+# the tree and perfectly fine, because that file is only compiled under
+# CONFIG_HYPERV.  Auditing the whole tree reported 158, nearly all of them like
+# that — <linux/version.h> does not exist in Linux v6.6 either, and the 52
+# references to it are all in files an OpenHarmony build never compiles.
+#
+# What is not conditional is the core: the non-uapi headers under include/ and
+# the target arch.  An include there that does not resolve breaks every build,
+# and that is exactly where the real problems were found:
+# include/linux/mm_types.h -> <linux/xpm_types.h>
+# include/linux/memcontrol.h -> <linux/memcg_policy.h>
+#
+# So the audit is scoped to that set, and says so in its output.  A build that
+# gets past it and then fails on a conditional include is a case for a follow-up
+# run with that CONFIG forced on.
+def always_compiled(rel, arch):
+    if rel.startswith("include/uapi/"):
+        return False
+    if rel.startswith("include/"):
+        return True
+    if rel.startswith(f"arch/{arch}/"):
+        return True
+    return False
+
+# An include that looks like a kernel header.  Everything else in an audited
+# file is either relative (handled separately) or a host-tool header.
+KERNEL_HEADER_PREFIXES = ("linux/", "uapi/", "asm/", "asm-generic/",
+                          "dt-bindings/", "sound/", "drm/", "video/",
+                          "generated/", "trace/", "scsi/", "net/", "mtd/",
+                          "of/", "fs/", "acpi/", "firmware/", "crypto/",
+                          "math/", "kunit/")
 # Headers the build itself produces; they are absent from a pristine tree by
 # design and must not be reported.
+# Headers the build writes into include/generated/ or
+# arch/<arch>/include/generated/.  They are absent from a pristine tree by
+# design and must never be reported.  Match on the path, not the basename:
+# <generated/utsrelease.h> is included 42 times across the tree.
 GENERATED = re.compile(
-    r"(asm-offsets\.h|timeconst\.h|version\.h|utsrelease\.h|"
-    r"autoconf\.h|bound\.h|utsrelease\.h|.*[.-]offsets\.h|"
-    r"sysreg-defs\.h|cpucaps\.h|asm/.*|bpf_.*\.h|"
-    r"asm-generic/.*|autoconf\.h)"
+    r"^generated/"                      # autoconf.h, bounds.h, utsrelease.h, ...
+    r"|asm-offsets\.h"
+    r"|timeconst\.h"
+    r"|utsversion?\.h"
+    r"|version\.h"
+    r"|sysreg-defs\.h"
+    r"|cpucaps\.h"
+    r"|randstruct_hash\.h"
+    r"|user_constants\.h"
+    r"|machtypes\.h"
+    r"|compile\.h"
+    r"|.*[.-]offsets\.h"                # devicetable-offsets.h and friends
 )
 
 
@@ -64,8 +118,15 @@ def collect(root):
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root)
             files.add(rel)
-            if name.endswith(SOURCE_SUFFIXES):
-                sources.append((rel, full))
+            if not name.endswith(SOURCE_SUFFIXES):
+                continue
+            if rel.startswith(NOT_KERNEL_TREES):
+                continue
+            # vendored third-party trees inside drivers/ and sound/ ship their
+            # own headers and are not part of the kernel's include graph
+            if "/staging/" in rel or rel.startswith("drivers/staging/"):
+                continue
+            sources.append((rel, full))
     return files, sources
 
 
@@ -86,9 +147,14 @@ def main(argv):
     files, sources = collect(root)
 
     # The -I paths the kernel's build uses, in its own order.
+    # The kernel's own -I order, from arch/arm64/Makefile.  The uapi entries
+    # matter: <asm/siginfo.h> is not under include/asm/ at all, it resolves to
+    # arch/arm64/include/uapi/asm/siginfo.h, and leaving the uapi directories
+    # out produced 90-odd false "missing" headers.
     include_dirs = [
         f"arch/{arch}/include/generated",
         f"arch/{arch}/include",
+        f"arch/{arch}/include/uapi",
         "include/generated",
         "include",
         "include/uapi",
@@ -96,29 +162,76 @@ def main(argv):
     # Generated headers do not exist in a pristine tree; the build makes them.
     generated_dirs = {"include/generated", f"arch/{arch}/include/generated"}
 
-    def resolves_angle(target):
-        for d in include_dirs:
+    def resolves_angle(target, from_rel):
+        """Resolve <target> the way the kernel's build would.
+
+        The search path for a file depends on where the file lives:
+          * a file under arch/<X>/ resolves asm/... against arch/<X>/include
+          * everything resolves against the target arch and the top level
+        Without the per-file arch directory, every non-arm64 arch header looks
+        missing, which is how the first version of this reported 1586.
+        """
+        local_dirs = []
+        parts = from_rel.split("/")
+        if parts[0] == "arch" and len(parts) >= 2:
+            # arch/m68k/... ; stop at the arch name, then its include dir
+            arch_name = parts[1]
+            if arch_name in ("arm64", "arm", "x86", "riscv", "loongarch",
+                             "s390", "mips", "m68k", "powerpc", "sparc",
+                             "alpha", "ia64", "parisc", "xtensa", "csky",
+                             "microblaze", "nios2", "openrisc", "hexagon",
+                             "arc", "um", "c6x"):
+                local_dirs.append(f"arch/{arch_name}/include")
+        for d in local_dirs + include_dirs:
             if d in generated_dirs:
-                # only trust a generated dir once the build has run
                 continue
             if os.path.normpath(os.path.join(d, target)) in files:
                 return True
         return False
 
     missing = {}
+    out_of_scope = 0
     for rel, full in sorted(sources):
+        if not always_compiled(rel, arch):
+            out_of_scope += 1
+            continue
         try:
             with open(full, "r", encoding="utf-8", errors="replace") as fh:
                 text = fh.read()
         except OSError:
             continue
+        base = os.path.dirname(rel)
         for m in ANGLE_RE.finditer(text):
             target = m.group("path")
             if GENERATED.match(target):
                 continue
             if target.startswith("uapi/") and target[5:] in files:
                 continue
-            if resolves_angle(target):
+            if resolves_angle(target, rel):
+                continue
+            # a relative include is resolved against the including file, not
+            # against the -I paths; check that before judging it missing
+            if target.startswith("."):
+                cand = os.path.normpath(os.path.join(base, target))
+                if cand in files or (cand + ".h") in files:
+                    continue
+            # anything that is not shaped like a kernel header is a host-tool or
+            # third-party include and is out of scope
+            if not target.startswith(KERNEL_HEADER_PREFIXES):
+                continue
+            # asm/... is deliberately out of scope.  Resolving it faithfully
+            # means modelling Linux's arch -> include/uapi/asm-generic fallback
+            # chain, and getting it wrong produced ~80 false "missing" headers
+            # on a tree that compiles.  Anything wrong there surfaces as a
+            # compiler error naming the file, which is a perfectly good report;
+            # what an audit buys us is finding the *generic* kernel headers
+            # that a core file needs and that nobody shipped, which is exactly
+            # the failure this project hit twice.
+            if target.startswith("asm/") or target.startswith("asm-generic/"):
+                continue
+            # <linux/version.h> from include/uapi/ resolves against the uapi
+            # search path, which this audit does not model either.
+            if rel.startswith("include/uapi/"):
                 continue
             line = text.count("\n", 0, m.start()) + 1
             missing.setdefault(target, []).append((rel, line))
