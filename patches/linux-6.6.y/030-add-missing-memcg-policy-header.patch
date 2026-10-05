@@ -1,6 +1,6 @@
-From e8bb053159f648b68ad39df35b52f832ccafba23 Mon Sep 17 00:00:00 2001
+From ee13997b06f2802d24c430028f5ec35c97a80277 Mon Sep 17 00:00:00 2001
 From: ohos-kernel-port contributors <232252@users.noreply.github.com>
-Date: Mon, 5 Oct 2026 08:29:34 +0800
+Date: Mon, 5 Oct 2026 09:08:47 +0800
 Subject: [PATCH] include: add memcg_policy.h, taken from the OpenHarmony 5.10
  tree
 MIME-Version: 1.0
@@ -19,7 +19,7 @@ Commit:   f4b61510491aa20f7f57fbbc5efc754083c92212
         incomplete type
 
 include/linux/memcg_policy.h is not tracked in the 6.6 tree.  memcontrol.h
-includes it unconditionally and embeds struct memcg_reclaim by value, so this
+includes it unconditionally and embeds struct memcg_reclaim by value, so it
 cannot be configured away; mm/memcg_reclaim.c, mm/vmscan.c, mm/zswapd.c and
 mm/zswapd_control.c include it too.
 
@@ -35,9 +35,8 @@ it, and this is that file with two adjustments:
     struct memcg_reclaim only exists when CONFIG_HYPERHOLD_ZSWAPD is set; in
     6.6 the fields are reached unconditionally — mm/memcontrol.c assigns
     ub_zram2ufs_ratio, ub_mem2zram_ratio and refault_threshold with atomic_set
-    and mm/zswapd.c does plain arithmetic on reclaimed_pagefault, none of it
-    behind a guard.  Keeping the 5.10 guards would make those files fail to
-    compile, which is the same failure this header's absence already causes.
+    and mm/zswapd.c does plain arithmetic on reclaimed_pagefault, none behind a
+    guard.  Keeping the 5.10 guards would make those files fail to compile.
 
 The field types come from the real definition, so the atomic widths match what
 the tree uses: atomic64_t for app_score and ub_ufs2zram_ratio, atomic_t for

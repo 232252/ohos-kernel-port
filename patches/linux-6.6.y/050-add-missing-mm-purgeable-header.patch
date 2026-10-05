@@ -1,35 +1,28 @@
-From 4c3833bc9e419dde131a99c4e29e89ed4b575f1c Mon Sep 17 00:00:00 2001
+From cabcd6648a3109e3773b3ee96ab3578e9840f0e3 Mon Sep 17 00:00:00 2001
 From: ohos-kernel-port contributors <232252@users.noreply.github.com>
-Date: Mon, 5 Oct 2026 08:29:35 +0800
+Date: Mon, 5 Oct 2026 09:08:49 +0800
 Subject: [PATCH] include: add mm_purgeable.h, taken from the OpenHarmony 5.10
  tree
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
 SPDX-License-Identifier: GPL-2.0-only
 
 Baseline: gitcode.com/openharmony/kernel_linux_6.6
 Branch:   OpenHarmony-7.0-Release
 Commit:   f4b61510491aa20f7f57fbbc5efc754083c92212
-Found by: tools/audit-includes.py
-
-    include/linux/memcontrol.h:... : fatal error: linux/mm_purgeable.h
 
 Six files include <linux/mm_purgeable.h> and the header is not tracked in the
 6.6 tree: mm/memory.c, mm/rmap.c, mm/purgeable.c, kernel/fork.c,
 fs/proc/meminfo.c and fs/proc/task_mmu.c.  mm/purgeable.c includes it
-unconditionally, and mm/Makefile compiles that object when
-CONFIG_MEM_PURGEABLE is set — which kernel_linux_config's
-type/standard_defconfig does set, as does the rk3568 board configuration.  So
-this is not conditional and cannot be configured away.
+unconditionally and mm/Makefile compiles that object when
+CONFIG_MEM_PURGEABLE is set, which kernel_linux_config's type/standard_defconfig
+does set, as does the rk3568 board configuration.  So this is not conditional
+and cannot be configured away.
 
 Not invented here: kernel_linux_5.10 in the same release carries the header,
-and this is that file with the SPDX tag narrowed from GPL-2.0 to GPL-2.0-only
-to match the 6.6 tree.  The original copyright is retained.  The API surface
-(uxpgd/uxpte helpers, mm_purg_pages_info, purg_pages_info) is taken from
-OpenHarmony rather than reconstructed, which is the point: this header declares
-functions that mm/purgeable.c defines, and a guess would not match.
+and this is that file with the SPDX tag narrowed to GPL-2.0-only.  The API
+surface (the uxpgd/uxpte helpers, mm_purg_pages_info, purg_pages_info) is taken
+from OpenHarmony rather than reconstructed, because it declares functions that
+mm/purgeable.c defines and a guess would not match.
 
 Upstream: no equivalent; Linux v6.6 has no mm_purgeable.h.
 Licence: GPL-2.0-only, same as the tree.

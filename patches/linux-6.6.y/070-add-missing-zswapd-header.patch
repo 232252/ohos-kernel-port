@@ -1,0 +1,87 @@
+From a2aea349558ac3cd5b634cc9c65ad5a3486574f6 Mon Sep 17 00:00:00 2001
+From: ohos-kernel-port contributors <232252@users.noreply.github.com>
+Date: Mon, 5 Oct 2026 09:08:51 +0800
+Subject: [PATCH] include: add zswapd.h, taken from the OpenHarmony 5.10 tree
+
+SPDX-License-Identifier: GPL-2.0-only
+
+Baseline: gitcode.com/openharmony/kernel_linux_6.6
+Branch:   OpenHarmony-7.0-Release
+Commit:   f4b61510491aa20f7f57fbbc5efc754083c92212
+
+    fatal error: linux/zswapd.h: No such file or directory
+
+Eight files include <linux/zswapd.h>: mm/memcg_control.c, mm/memcontrol.c,
+mm/memory_hotplug.c, mm/page_alloc.c, mm/swapfile.c, mm/vmscan.c and two
+drivers.  mm/memcontrol.h and mm/vmscan.c are on every build's path.
+
+Taken from kernel_linux_5.10 in the same release, with the SPDX tag narrowed to
+GPL-2.0-only.  See 020, 030, 050 and 060: the 6.6 tree is missing a set of
+headers the 5.10 tree carries, and this is the seventh.
+
+Upstream: no equivalent; Linux v6.6 has no zswapd.h.
+Licence: GPL-2.0-only, same as the tree.
+---
+ include/linux/zswapd.h | 50 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 50 insertions(+)
+ create mode 100644 include/linux/zswapd.h
+
+diff --git a/include/linux/zswapd.h b/include/linux/zswapd.h
+new file mode 100644
+index 0000000..27c5596
+--- /dev/null
++++ b/include/linux/zswapd.h
+@@ -0,0 +1,50 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * include/linux/zswapd.h
++ *
++ * Copyright (c) 2020-2022 Huawei Technologies Co., Ltd.
++ */
++
++#ifndef _ZSWAPD_H
++#define _ZSWAPD_H
++
++enum {
++	CACHE_SIZE,
++	SWAP_SIZE,
++	CACHE_PAGE,
++	SWAP_PAGE,
++	CACHE_FAULT,
++	SWAP_FAULT,
++	READ_SIZE,
++	WRITE_SIZE,
++};
++
++struct group_swap_ops {
++	u64 (*group_read)(u16 gid, u64 req_size, void *priv);
++	u64 (*group_write)(u16 gid, u64 req_size, void *priv);
++	u64 (*group_data_size)(u16 gid, int type, void *priv);
++};
++
++struct group_swap_device {
++	void *priv;
++	struct group_swap_ops *ops;
++	struct list_head list;
++};
++
++#ifdef CONFIG_HYPERHOLD_ZSWAPD
++extern int zswapd_run(int nid);
++extern void zswapd_stop(int nid);
++extern void zswapd_status_show(struct seq_file *m);
++extern void wake_all_zswapd(void);
++extern void set_snapshotd_init_flag(unsigned int val);
++extern pid_t get_zswapd_pid(void);
++extern unsigned long long get_free_swap_threshold(void);
++extern struct group_swap_device *register_group_swap(struct group_swap_ops *ops, void *priv);
++extern void unregister_group_swap(struct group_swap_device *gsdev);
++
++#ifdef CONFIG_HYPERHOLD_DEBUG
++extern void memcg_eswap_info_show(struct seq_file *m);
++#endif
++#endif
++
++#endif /* _LINUX_ZSWAPD_H */
+-- 
+2.39.5
+

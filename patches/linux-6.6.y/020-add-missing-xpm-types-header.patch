@@ -1,6 +1,6 @@
-From 60478c84ebcb701b12a830219bd2caeb34b6157d Mon Sep 17 00:00:00 2001
+From 27e5bd2c7af6f4ad78415d3ffaa20eb23913e2ce Mon Sep 17 00:00:00 2001
 From: ohos-kernel-port contributors <232252@users.noreply.github.com>
-Date: Mon, 5 Oct 2026 08:29:13 +0800
+Date: Mon, 5 Oct 2026 09:08:46 +0800
 Subject: [PATCH] include: add xpm_types.h, taken from the OpenHarmony 5.10
  tree
 
@@ -20,12 +20,14 @@ mm_types.h includes it unconditionally, so disabling CONFIG_SECURITY_XPM does
 not help.
 
 The file is not invented here.  kernel_linux_5.10 in the same OpenHarmony
-release carries it, and this is that file, with the SPDX tag normalised to
-GPL-2.0-only to match the 6.6 tree and the upstream copyright left intact.
-Using the real definition matters: struct xpm_region is embedded by value in
+release carries it, and this is that file, with the SPDX tag narrowed from
+GPL-2.0-or-later to GPL-2.0-only to match the 6.6 tree and the upstream
+copyright left intact.
+
+Using the real definition matters.  struct xpm_region is embedded by value in
 mm_struct, so a guessed layout would have produced a kernel that compiled and
-was subtly wrong.  The 5.10 and 6.6 xpm_region are the same two fields, so
-the definition carries across unchanged.
+was quietly wrong.  The real one is two unsigned longs, addr_start and
+addr_end, and the 5.10 and 6.6 definitions are identical.
 
 Licence note: the file arrives as GPL-2.0-or-later in 5.10.  The 6.6 tree is
 GPL-2.0-only, and GPL-2.0 section 4 forbids relicensing, so the tag is
@@ -40,11 +42,11 @@ Licence: GPL-2.0-only, same as the tree.
 
 diff --git a/include/linux/xpm_types.h b/include/linux/xpm_types.h
 new file mode 100644
-index 0000000..250fd4f
+index 0000000..a9e8afe
 --- /dev/null
 +++ b/include/linux/xpm_types.h
 @@ -0,0 +1,21 @@
-+/* SPDX-License-Identifier: GPL-2.0-only */
++/* SPDX-License-Identifier: GPL-2.0-only-only */
 +/*
 + * Copyright (c) 2023 Huawei Device Co., Ltd.
 + */

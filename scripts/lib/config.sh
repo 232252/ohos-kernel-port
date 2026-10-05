@@ -149,15 +149,25 @@ _merge_fragments() {
     fi
 
     local merge="${srcdir}/scripts/kconfig/merge_config.sh"
+    local tmp; tmp=$(make_tmpdir)
+
     if [[ ! -x "${merge}" ]]; then
-        die "${merge} not found or not executable; cannot merge config fragments"
+        # merge_config.sh landed in Linux 5.17, so the 5.10 tree has none.
+        # Concatenating in order is semantically correct for override-style
+        # fragments: kconfig reads a configuration top to bottom and each
+        # assignment replaces the previous value, including "# CONFIG_X is not
+        # set".  olddefconfig then resolves whatever the fragments implied.
+        log_warn "${merge#"${srcdir}"/} is absent (pre-5.17 kernel);"
+        log_warn "  concatenating ${#frags[@]} fragment(s) in order and letting olddefconfig resolve"
+        cat "${frags[@]}" > "${out}"
+        printf '%s\n' "${out}"
+        return 0
     fi
 
-    local tmp; tmp=$(make_tmpdir)
     : > "${tmp}/base.config"          # an empty base keeps ordering explicit
 
-    # -m and -O must stay in this order-free form: the real script consumes -m
-    # as a flag and -O as an argument, so nothing may be glued together.
+    # -m is a boolean flag ("merge only, do not run make") and -O takes the
+    # output directory; the result is <dir>/.config, not <dir> itself.
     if ! ( cd "${srcdir}" && bash "${merge}" -m -O "${tmp}" "${tmp}/base.config" "${frags[@]}" ); then
         log_warn "merge_config.sh exited non-zero (continuing; olddefconfig will settle it)"
     fi

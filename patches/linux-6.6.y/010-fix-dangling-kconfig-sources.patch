@@ -1,6 +1,6 @@
-From 94449c89b160b8ce9b23f9cceac733d57c6fd113 Mon Sep 17 00:00:00 2001
+From f98c1214cfa122b7e8ca930ff5fee42d8507e5dc Mon Sep 17 00:00:00 2001
 From: ohos-kernel-port contributors <232252@users.noreply.github.com>
-Date: Mon, 5 Oct 2026 08:29:12 +0800
+Date: Mon, 5 Oct 2026 09:08:23 +0800
 Subject: [PATCH] fs,security: make the Kconfig graph resolvable without
  dropping symbols
 MIME-Version: 1.0

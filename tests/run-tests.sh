@@ -734,7 +734,9 @@ if [[ ${patch_count} -gt 0 ]] && have git; then
                 fi
             done
             # (d) and both shim headers must be in place
-            for h in include/linux/xpm_types.h include/linux/memcg_policy.h; do
+            for h in include/linux/xpm_types.h include/linux/memcg_policy.h \
+                     include/linux/mm_purgeable.h include/linux/reclaim_acct.h \
+                     include/linux/zswapd.h; do
                 if [[ "${NEEDS_HEADERS}" == "0" && ! -f "${repro}/${h}" ]]; then continue; fi
                 if [[ ! -f "${repro}/${h}" ]]; then
                     printf '        shim missing after patching: %s\n' "${h}"; problems=$((problems+1))

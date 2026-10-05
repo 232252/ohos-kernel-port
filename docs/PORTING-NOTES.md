@@ -184,11 +184,13 @@ Checked against `kernel_linux_5.10` at the same release branch:
 | `include/linux/xpm_types.h` | absent | **present** |
 | `include/linux/memcg_policy.h` | absent | **present** |
 | `include/linux/mm_purgeable.h` | absent | **present** |
+| `include/linux/reclaim_acct.h` | absent | **present** |
+| `include/linux/zswapd.h` | absent | **present** |
 | the five dangling Kconfig sources | all five | all five |
 
 So the two trees differ in exactly this way: the 5.10 tree is complete on
-headers, the 6.6 tree is not. That is what `patches/linux-6.6.y/020`, `030` and
-`050` are for, and **they are not invented** — each is the file from
+headers, the 6.6 tree is not. That is what `patches/linux-6.6.y/020` through
+`070` are for, and **they are not invented** — each is the file from
 OpenHarmony's own 5.10 tree, with two adjustments: the SPDX tag is narrowed from
 GPL-2.0 / GPL-2.0-or-later to GPL-2.0-only to match the 6.6 tree (GPL-2.0 §4
 forbids relicensing), and the `CONFIG_HYPERHOLD_*` guards in `memcg_policy.h`
@@ -198,6 +200,11 @@ That matters. `struct xpm_region` is embedded by value in `mm_struct` and
 `struct memcg_reclaim` in `mem_cgroup`, so a guessed layout would have produced
 a kernel that compiled and was subtly wrong. `struct xpm_region` turned out to
 be two `unsigned long`s, `addr_start` and `addr_end`.
+
+The last two, `reclaim_acct.h` and `zswapd.h`, were not found by reading the
+tree: they were reported by `--keep-going`, which made `make -k` collect every
+missing file in a single run instead of stopping at the first. That is what
+that flag is for, and it turned a five-round hunt into one.
 
 **Consequence for the release target.** The 5.10 lane needs one patch
 (`patches/linux-5.10.y/010`, the Kconfig fix) and the 6.6 lane needs five, so
