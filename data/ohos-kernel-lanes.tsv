@@ -3,57 +3,67 @@
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (C) 2026 ohos-kernel-port contributors
 #
-# Each row = one buildable "lane" (a source tree + an OpenHarmony release branch
-# + the resulting kernel version).  Every row was verified against the upstream
-# git remote's Makefile (VERSION/PATCHLEVEL/SUBLEVEL); see
-# docs/VERSION-MATRIX.md for the verification log.
+# Each row is one buildable "lane": a kernel source + an OpenHarmony release
+# branch + a BOARD + a system type.  Every kernel version was read out of the
+# remote's own Makefile, and every board was read out of OpenHarmony's own
+# kernel_linux_config, not assumed.
 #
-# Columns (TAB separated):
-#   lane_id       stable identifier used by `ohos-kb --lane <lane_id>`
-#   source_kind   ohos | upstream        (ohos = OpenHarmony kernel repo,
-#                                        upstream = ophub/unifreq mainline tree)
-#   source_repo   repository name (no host)
-#   source_host   git remote host
-#   ohos_branch   OpenHarmony release branch this lane tracks
-#   kver          kernel version string resolved from the source Makefile
-#   overlay       config overlay dir under configs/lanes/<overlay>/
-#   status        primary | stable | legacy | experimental
-#   note          free text
+# WHY A ROW IS NOT JUST (source, branch)
+# -------------------------------------
+# A kernel built from a generic configuration is not usable on a device.
+# OpenHarmony's configuration repository ships a per-board configuration for
+# each target, and a boardless build has no GPU driver, no Wi-Fi, no board
+# pin/mux, no touch controller: the 6.6 rk3568 configuration alone carries 24
+# CONFIG_MALI_BIFROST* entries with MALI_PLATFORM_NAME="rk" that a boardless
+# build does not get.  So `board` is a required dimension, not a hint, and a
+# lane with an empty board is only ever useful for a generic or CI build.
 #
-# --- OpenHarmony native kernel lanes (verified 2026-10-04) --------------------
-ohos-7.0-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	MAIN TARGET - OpenHarmony 7.0 / Linux 6.6.101; needs patches/linux-6.6.y, because the 6.6 tree is missing headers the 5.10 tree carries
-ohos-7.0-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS kernel - secondary lane; needs only patches/linux-5.10.y
-ohos-7.0b-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Beta1	6.6.101	ohos-6.6	stable	OpenHarmony 7.0 beta
-ohos-6.1-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.1-Release	6.6.101	ohos-6.6	stable	OpenHarmony 6.1
-ohos-6.1lts-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.1-LTS	6.6.101	ohos-6.6	stable	OpenHarmony 6.1 LTS
-ohos-6.0-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.0-Release	6.6.101	ohos-6.6	stable	OpenHarmony 6.0
-ohos-6.0b-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.0-Beta1	6.6.89	ohos-6.6	stable	last 6.6.89 baseline
-ohos-5.1-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-5.1.0-Release	6.6.89	ohos-6.6	stable	OpenHarmony 5.1
-ohos-5.0-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-5.0.0-Release	6.6.22	ohos-6.6	legacy	OpenHarmony 5.0
-# --- OpenHarmony 5.10 lane -----------------------------------------------------
-ohos-7.0b-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Beta1	5.10.210	ohos-5.10	stable	OpenHarmony 7.0 beta
-ohos-6.1-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-6.1-Release	5.10.210	ohos-5.10	stable	OpenHarmony 6.1
-ohos-6.1lts-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-6.1-LTS	5.10.210	ohos-5.10	stable	OpenHarmony 6.1 LTS
-ohos-6.0-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-6.0-Release	5.10.210	ohos-5.10	stable	OpenHarmony 6.0
-ohos-5.1-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-5.1.0-Release	5.10.210	ohos-5.10	stable	OpenHarmony 5.1
-ohos-5.0-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-5.0.0-Release	5.10.208	ohos-5.10	legacy	OpenHarmony 5.0
-ohos-4.1-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-4.1-Release	5.10.184	ohos-5.10	legacy	OpenHarmony 4.1
-ohos-4.0-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-4.0-Release	5.10.165	ohos-5.10	legacy	OpenHarmony 4.0
-ohos-3.2-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-3.2-Release	5.10.97	ohos-5.10	legacy	OpenHarmony 3.2 LTS
-ohos-3.1-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-3.1-Release	5.10.79	ohos-5.10	legacy	OpenHarmony 3.1
-ohos-3.0-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-3.0-LTS	5.10.57	ohos-5.10	legacy	OpenHarmony 3.0 LTS
-# --- OpenHarmony 4.19 lane (superseded, kept for reproducibility) --------------
-ohos-4.0b1-4.19	ohos	kernel_linux_4.19	https://gitcode.com/openharmony	OpenHarmony-4.0-Beta1	4.19.155	ohos-4.19	legacy	last 4.19 maintenance
-ohos-2.2-4.19	ohos	kernel_linux	https://gitcode.com/openharmony	OpenHarmony-2.2-Beta2	4.19.155	ohos-4.19	legacy	OpenHarmony 2.2
-# --- Mainline lanes carried over from ophub (NOT shipped by OpenHarmony) -------
-# OpenHarmony publishes no kernel repo for 5.15/6.1/6.12/6.18.  These lanes keep
-# ophub's version breadth available by applying the OpenHarmony config overlay on
-# top of the upstream mainline tree.  Experimental: no OpenHarmony release has
-# ever been validated against them, so OHOS-specific regressions are expected.
-upstream-5.15.y	upstream	linux-5.15.y	https://github.com/ophub	-	5.15.y	ohos-5.15	experimental	ophub/unifreq mainline, OHOS overlay applied
-upstream-6.1.y	upstream	linux-6.1.y	https://github.com/ophub	-	6.1.y	ohos-6.1	experimental	ophub/unifreq mainline, OHOS overlay applied
-upstream-6.12.y	upstream	linux-6.12.y	https://github.com/ophub	-	6.12.y	ohos-6.12	experimental	ophub/unifreq mainline, OHOS overlay applied
-upstream-6.18.y	upstream	linux-6.18.y	https://github.com/ophub	-	6.18.y	ohos-6.18	experimental	ophub/unifreq mainline, OHOS overlay applied
-# --- Rockchip BSP lanes carried over from ophub (no OpenHarmony equivalent) ----
-upstream-5.10.y-rk35xx	upstream	linux-5.10.y-rk35xx	https://github.com/ophub	-	5.10.y-rk35xx	ohos-rk35xx	experimental	Rockchip rk3528/rk3566/rk3568 BSP
-upstream-6.1.y-rockchip	upstream	linux-6.1.y-rockchip	https://github.com/ophub	-	6.1.y-rockchip	ohos-rockchip	experimental	Rockchip 6.1 BSP
+# Columns (TAB separated; 1-11, the last two may be empty):
+#   1 lane_id     identifier for `ohos-kb --lane <lane_id>`
+#   2 source_kind ohos | upstream
+#   3 source_repo kernel repository name (no host)
+#   4 source_host git remote host
+#   5 ohos_branch OpenHarmony release branch this lane tracks
+#   6 kver        kernel version string read from that branch's Makefile
+#   7 overlay     config overlay dir under configs/lanes/<overlay>/
+#   8 status      primary | stable | legacy | experimental
+#   9 note        free text
+#  10 board       board layer in kernel_linux_config ('' = none, generic build)
+#  11 arch        target ARCH override; empty means derived from the repository
+#
+# Verified against gitcode.com/openharmony on 2026-10-04..06.
+ohos-7.0-6.6-rk3568	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	OpenHarmony 7.0 on RK3568 - the only device board with a 6.6 configuration	rk3568	
+ohos-7.0-6.6-qemu-arm64	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	primary	6.6 on the arm64 QEMU target, for emulation and CI	qemu	
+ohos-7.0-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	6.6.101	ohos-6.6	stable	boardless generic 6.6 build - NOT for a device; see docs/BOARDS.md		
+ohos-7.0-5.10-rk3568	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS on RK3568, the reference OHOS dev board (Orange Pi 5 Plus class); config 6187 lines	rk3568	
+ohos-7.0-5.10-myd_imx8mm	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS on MYD i.MX8M Mini, arm64; config 1686 lines	myd_imx8mm	
+ohos-7.0-5.10-unionpi_tiger	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS on UnionPi Tiger, RK3588-class SBC, arm64; config 6050 lines	unionpi_tiger	
+ohos-7.0-5.10-yangfan	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS on Yangfan board, arm64; config 6040 lines	yangfan	
+ohos-7.0-5.10-hispark_taurus	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS on HiSpark Taurus, arm (32-bit); config 3638 lines	hispark_taurus	arm
+ohos-7.0-5.10-qemu	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	primary	OpenHarmony 7.0 LTS on arm64 QEMU target; config 1650 lines	qemu	
+ohos-7.0-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-7.0-Release	5.10.210	ohos-5.10	stable	boardless generic 5.10 build - NOT for a device		
+ohos-7.0-beta1-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-7.0-Beta1	6.6.101	ohos-6.6	stable	OpenHarmony 7.0 beta, rk3568 board	rk3568	
+ohos-6.1-lts-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.1-LTS	6.6.101	ohos-6.6	stable	OpenHarmony 6.1 LTS, rk3568 board	rk3568	
+ohos-6.1-release-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.1-Release	6.6.101	ohos-6.6	stable	OpenHarmony 6.1, rk3568 board	rk3568	
+ohos-6.0-release-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.0-Release	6.6.101	ohos-6.6	stable	OpenHarmony 6.0, rk3568 board	rk3568	
+ohos-6.0-beta1-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-6.0-Beta1	6.6.89	ohos-6.6	stable	OpenHarmony 6.0 beta, last 6.6.89 baseline, rk3568 board	rk3568	
+ohos-5.1.0-release-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-5.1.0-Release	6.6.89	ohos-6.6	stable	OpenHarmony 5.1, rk3568 board	rk3568	
+ohos-5.0.0-release-6.6	ohos	kernel_linux_6.6	https://gitcode.com/openharmony	OpenHarmony-5.0.0-Release	6.6.22	ohos-6.6	stable	OpenHarmony 5.0, last 6.6.22 baseline, rk3568 board	rk3568	
+ohos-6.1-lts-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-6.1-LTS	5.10.210	ohos-5.10	legacy	OpenHarmony 6.1 LTS, rk3568 board	rk3568	
+ohos-6.1-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-6.1-Release	5.10.210	ohos-5.10	legacy	OpenHarmony 6.1, rk3568 board	rk3568	
+ohos-6.0-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-6.0-Release	5.10.210	ohos-5.10	legacy	OpenHarmony 6.0, rk3568 board	rk3568	
+ohos-5.1.0-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-5.1.0-Release	5.10.210	ohos-5.10	legacy	OpenHarmony 5.1, rk3568 board	rk3568	
+ohos-5.0.0-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-5.0.0-Release	5.10.208	ohos-5.10	legacy	OpenHarmony 5.0, rk3568 board	rk3568	
+ohos-4.1-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-4.1-Release	5.10.184	ohos-5.10	legacy	OpenHarmony 4.1, rk3568 board	rk3568	
+ohos-4.0-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-4.0-Release	5.10.165	ohos-5.10	legacy	OpenHarmony 4.0, rk3568 board	rk3568	
+ohos-3.2-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-3.2-Release	5.10.97	ohos-5.10	legacy	OpenHarmony 3.2 LTS, rk3568 board	rk3568	
+ohos-3.1-release-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-3.1-Release	5.10.79	ohos-5.10	legacy	OpenHarmony 3.1, rk3568 board	rk3568	
+ohos-3.0-lts-5.10	ohos	kernel_linux_5.10	https://gitcode.com/openharmony	OpenHarmony-3.0-LTS	5.10.57	ohos-5.10	legacy	OpenHarmony 3.0 LTS, rk3568 board	rk3568	
+ohos-4.0b1-4.19-hispark_taurus	ohos	kernel_linux_4.19	https://gitcode.com/openharmony	OpenHarmony-4.0-Beta1	4.19.155	ohos-4.19	legacy	last 4.19 maintenance, HiSpark Taurus (arm)	hispark_taurus	arm
+ohos-2.2-4.19	ohos	kernel_linux	https://gitcode.com/openharmony	OpenHarmony-2.2-Beta2	4.19.155	ohos-4.19	legacy	OpenHarmony 2.2, boardless		
+upstream-5.15.y	upstream	linux-5.15.y	https://github.com/ophub	-	5.15.y	ohos-5.15	experimental	ophub mainline tree + OHOS config overlay; no OHOS release validates this		
+upstream-6.1.y	upstream	linux-6.1.y	https://github.com/ophub	-	6.1.y	ohos-6.1	experimental	ophub mainline tree + OHOS config overlay; no OHOS release validates this		
+upstream-6.12.y	upstream	linux-6.12.y	https://github.com/ophub	-	6.12.y	ohos-6.12	experimental	ophub mainline tree + OHOS config overlay; no OHOS release validates this		
+upstream-6.18.y	upstream	linux-6.18.y	https://github.com/ophub	-	6.18.y	ohos-6.18	experimental	ophub mainline tree + OHOS config overlay; no OHOS release validates this		
+upstream-5.10.y-rk35xx	upstream	linux-5.10.y-rk35xx	https://github.com/ophub	-	5.10.y-rk35xx	ohos-rk35xx	experimental	Rockchip rk35xx BSP tree from ophub, with the OHOS overlay	rk35xx	
+upstream-6.1.y-rockchip	upstream	linux-6.1.y-rockchip	https://github.com/ophub	-	6.1.y-rockchip	ohos-rockchip	experimental	Rockchip 6.1 BSP tree from ophub, with the OHOS overlay	rk3588	

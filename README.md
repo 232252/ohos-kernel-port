@@ -117,6 +117,7 @@ configured — see [docs/PORTING-NOTES.md](docs/PORTING-NOTES.md).
 
 ## Documentation
 
+* [docs/BOARDS.md](docs/BOARDS.md) — **which kernel goes on which device**, and why a generic one is not usable
 * [docs/VERSION-MATRIX.md](docs/VERSION-MATRIX.md) — every lane, with how it was verified
 * [docs/PORTING-NOTES.md](docs/PORTING-NOTES.md) — what differs between ophub and OpenHarmony, and the traps
 * [docs/BOOT-IMAGE.md](docs/BOOT-IMAGE.md) — the boot image format problem

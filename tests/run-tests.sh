@@ -95,12 +95,12 @@ assert_eq "lane ids are unique" "" "${dupes}"
 section "lane resolution"
 #==============================================================================
 
-assert_eq "primary resolves to the 6.6.101 lane"  "ohos-7.0-6.6" "$(lane_resolve primary)"
-assert_eq "latest resolves to the same"           "ohos-7.0-6.6" "$(lane_resolve latest)"
-assert_eq "exact id"                              "ohos-7.0-5.10" "$(lane_resolve ohos-7.0-5.10)"
-assert_eq "by OpenHarmony branch"                 "ohos-7.0-6.6"  "$(lane_resolve ohos@OpenHarmony-7.0-Release)"
-assert_eq "by version@branch"                     "ohos-7.0-6.6"  "$(lane_resolve 6.6.101@OpenHarmony-7.0-Release)"
-assert_eq "by kernel version"                     "ohos-7.0-5.10" "$(lane_resolve 5.10.210)"
+assert_eq "primary resolves to the 6.6.101 rk3568 lane" "ohos-7.0-6.6-rk3568" "$(lane_resolve primary)"
+assert_eq "latest resolves to the same"           "ohos-7.0-6.6-rk3568" "$(lane_resolve latest)"
+assert_eq "exact id"                              "ohos-7.0-5.10-rk3568" "$(lane_resolve ohos-7.0-5.10-rk3568)"
+assert_eq "by OpenHarmony branch"                 "ohos-7.0-6.6-rk3568" "$(lane_resolve ohos@OpenHarmony-7.0-Release)"
+assert_eq "by version@branch"                     "ohos-7.0-6.6-rk3568" "$(lane_resolve 6.6.101@OpenHarmony-7.0-Release)"
+assert_eq "by kernel version"                     "ohos-7.0-5.10-rk3568" "$(lane_resolve 5.10.210)"
 assert_true "an unknown selector is rejected"     bash -c "source '${ROOT}/scripts/lib/matrix.sh' >/dev/null 2>&1; lane_resolve no-such-lane >/dev/null 2>&1; [[ \$? -ne 0 ]]"
 
 # The headline promise of the project: both headline lanes track OpenHarmony
@@ -122,9 +122,9 @@ assert_eq "the primary lane builds an arm64 kernel" \
 # 6.6.101 stays a supported lane; it is second because that tree is missing
 # headers the 5.10 tree carries (patches/linux-6.6.y supplies them).
 assert_eq "the 6.6 lane still resolves to Linux 6.6.101" \
-          "6.6.101" "$(lane_kver ohos-7.0-6.6)"
+          "6.6.101" "$(lane_kver ohos-7.0-6.6-rk3568)"
 assert_eq "the 6.6 lane still targets 7.0" \
-          "OpenHarmony-7.0-Release" "$(lane_ohos_branch ohos-7.0-6.6)"
+          "OpenHarmony-7.0-Release" "$(lane_ohos_branch ohos-7.0-6.6-rk3568)"
 
 #==============================================================================
 section "URL construction"
@@ -139,8 +139,8 @@ section "patch selection"
 #==============================================================================
 
 # ohos lanes key off the upstream series token; upstream lanes use the repo name.
-assert_eq "6.6.101 selects linux-6.6.y"  "linux-6.6.y"  "$(patch_series_for_lane ohos-7.0-6.6)"
-assert_eq "5.10.210 selects linux-5.10.y" "linux-5.10.y" "$(patch_series_for_lane ohos-7.0-5.10)"
+assert_eq "6.6.101 selects linux-6.6.y"  "linux-6.6.y"  "$(patch_series_for_lane ohos-7.0-6.6-rk3568)"
+assert_eq "5.10.210 selects linux-5.10.y" "linux-5.10.y" "$(patch_series_for_lane ohos-7.0-5.10-rk3568)"
 assert_eq "upstream lane uses its repo name" "linux-6.18.y" "$(patch_series_for_lane upstream-6.18.y)"
 
 # Common patches come first, then the series ones, each in name order.
@@ -159,9 +159,9 @@ rm -rf "${tmp}"
 section "config layer selection"
 #==============================================================================
 
-assert_eq "arm64 for the 6.6 lane"  "arm64" "$(config_arch ohos-7.0-6.6)"
-assert_eq "arm64 for the 5.10 lane" "arm64" "$(config_arch ohos-7.0-5.10)"
-assert_eq "arm for the 4.19 lane"   "arm"   "$(config_arch ohos-4.0b1-4.19)"
+assert_eq "arm64 for the 6.6 lane"  "arm64" "$(config_arch ohos-7.0-6.6-rk3568)"
+assert_eq "arm64 for the 5.10 lane" "arm64" "$(config_arch ohos-7.0-5.10-rk3568)"
+assert_eq "arm for the 4.19 lane"   "arm"   "$(config_arch ohos-4.0b1-4.19-hispark_taurus)"
 
 # A defconfig is a *fragment* when small, a *complete config* when large or
 # carrying the kconfig "generated" banner.  Both forms occur in
@@ -312,7 +312,8 @@ for f in README.md README.cn.md; do
     fi
 done
 
-for f in docs/VERSION-MATRIX.md docs/PORTING-NOTES.md docs/BOOT-IMAGE.md docs/COMPLIANCE.md configs/README.md; do
+for f in docs/VERSION-MATRIX.md docs/PORTING-NOTES.md docs/BOOT-IMAGE.md docs/COMPLIANCE.md \
+         docs/BOARDS.md configs/README.md; do
     if [[ -s "${ROOT}/${f}" ]]; then
         PASS=$((PASS+1)); printf '  \033[0;32mok\033[0m   %s exists\n' "${f}"
     else
@@ -399,7 +400,11 @@ config_probe() {  # <label> <lane> <expected-lines|-> [ENV=VAL ...]
     mkdir -p "${work}/kbuild"
     (
         export OKCP_WORKDIR="${OKCP_WORKDIR:-${work}/build}"
-        export "$@"
+        local e
+        for e in "$@"; do
+            [[ "${e}" == OKCP_NOENV=1 ]] && continue
+            export "${e}"
+        done
         generate_config "${lane}" "${work}/kernel" "${work}/kbuild" >/dev/null 2>&1
     ) || {
         printf '  \033[0;31mFAIL\033[0m %s: generate_config exited non-zero\n' "${label}"
@@ -438,8 +443,14 @@ else
     config_probe "6.6 + rk3568 (complete board config)" ohos-7.0-6.6  6193 OKCP_BOARD=rk3568
     config_probe "5.10 fragments (type/small)"          ohos-7.0-5.10  843 OKCP_BOARD= OKCP_SYSTEM_TYPE=small
     config_probe "5.10 fragments (type/standard)"       ohos-7.0-5.10  1348 OKCP_BOARD=
-    config_probe "4.19 legacy layout (arch/arm/configs)" ohos-4.0b1-4.19 3206 OKCP_ARCH=arm OKCP_BOARD=
-    config_probe "4.19 + hispark_taurus (complete)"     ohos-4.0b1-4.19 3327 OKCP_ARCH=arm OKCP_BOARD=hispark_taurus
+    # The remaining board layouts, resolved from the same checked-out config
+    # repository.  4.19 is not probed here: it lives in a different kernel
+    # repository, so it would need its own checkout, and the 6.6/5.10 boards
+    # are the ones that matter for this project.
+    config_probe "6.6 qemu (arch/*/configs layout)"   ohos-7.0-6.6-qemu-arm64   - OKCP_NOENV=1
+    config_probe "5.10 unionpi_tiger (complete)"       ohos-7.0-5.10-unionpi_tiger - OKCP_NOENV=1
+    config_probe "5.10 hispark_taurus (arm, complete)" ohos-7.0-5.10-hispark_taurus - OKCP_NOENV=1
+    config_probe "6.6 generic (no board)"              ohos-7.0-6.6 1349 OKCP_BOARD=
 fi
 
 #==============================================================================
@@ -798,6 +809,68 @@ if [[ -x "${ROOT}/tools/audit-kconfig.py" ]]; then
 else
     FAIL=$((FAIL+1)); FAILURES+=("tools/audit-kconfig.py is missing")
     printf '  \033[0;31mFAIL\033[0m tools/audit-kconfig.py is missing\n'
+fi
+
+#==============================================================================
+section "board coverage"
+#==============================================================================
+
+# The whole point of a lane matrix: a lane that names no board builds a generic
+# kernel, which is not usable on a device.  Every `primary` lane must therefore
+# name one, and every board it names must exist in the OpenHarmony config repo
+# for that kernel series.
+gen_primary=0
+while IFS=$'\t' read -r id kind repo host branch kver overlay status note board arch; do
+    [[ -z "${id}" || "${id}" == \#* ]] && continue
+    [[ "${status}" == "primary" ]] || continue
+    if [[ -z "${board}" ]]; then
+        printf '  \033[0;31mFAIL\033[0m primary lane %s names no board (a generic kernel)\n' "${id}"
+        gen_primary=$((gen_primary+1)); continue
+    fi
+    PASS=$((PASS+1))
+    printf '  \033[0;32mok\033[0m   primary %-28s board=%-16s arch=%s\n' \
+           "${id}" "${board}" "${arch:-derived}"
+done < "${OKCP_LANES_FILE}"
+assert_eq "every primary lane builds for a named board" "0" "${gen_primary}"
+
+# Each OpenHarmony kernel series has a different set of boards; a lane pointing
+# at a board the series does not have would silently fall back to a generic
+# configuration, which is the failure this whole section exists to prevent.
+assert_no_phantom_boards() {
+    local bad=0 cand id kind repo host branch kver overlay status note board arch
+    while IFS=$'\t' read -r id kind repo host branch kver overlay status note board arch; do
+        [[ -z "${id}" || "${id}" == \#* ]] && continue
+        [[ -n "${board}" ]] || continue
+        # upstream-* lanes are ophub's own trees; their boards are not
+        # OpenHarmony's and must not be looked for in kernel_linux_config.
+        [[ "${kind}" == "ohos" ]] || continue
+        local series
+        series=$(kernel_series "${kver}")
+        local probe
+        if [[ -n "${OKCP_TEST_CONFIG_REPO:-}" && -d "${OKCP_TEST_CONFIG_REPO}" ]]; then
+            # Either layout counts: linux-<s>/<board>/..., or a defconfig under
+            # linux-<s>/arch/*/configs/ named after the board.
+            if [[ -d "${OKCP_TEST_CONFIG_REPO}/linux-${series}/${board}" ]]; then
+                continue
+            fi
+            local found=0
+            for cand in "${OKCP_TEST_CONFIG_REPO}"/linux-${series}/arch/*/configs/"${board}"*_defconfig; do
+                if [[ -f "${cand}" ]]; then found=1; break; fi
+            done
+            if [[ ${found} -eq 0 ]]; then
+                printf '  \033[0;31mFAIL\033[0m %s: linux-%s has no board %s\n' "${id}" "${series}" "${board}" >&2
+                bad=$((bad+1))
+            fi
+        fi
+    done < "${OKCP_LANES_FILE}"
+    return "${bad}"
+}
+if [[ -n "${OKCP_TEST_CONFIG_REPO:-}" ]]; then
+    phantom=$(assert_no_phantom_boards)
+    [[ -n "${phantom}" ]] && printf '%s\n' "${phantom}" >&2
+    assert_eq "every lane board exists in the OpenHarmony config repo" "0" "${phantom:-0}"
+else
+    SKIP=$((SKIP+1)); printf '  skip board-existence check (set OKCP_TEST_CONFIG_REPO)\n'
 fi
 
 #==============================================================================

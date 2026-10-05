@@ -119,6 +119,16 @@ OPT_LANE_ARG=""
 set_lane() {
     local sel=${1:-primary}
     LANE=$(lane_resolve "${sel}")
+    # A lane that names a board or an ARCH supplies the default for both, so
+    # `ohos-kb all <lane>` builds the device kernel rather than a generic one.
+    # An explicit --board / --arch on the command line still wins, because the
+    # pre-scan runs after this and assigns over the value set here.
+    local b a
+    b=$(lane_board "${LANE}" 2>/dev/null || true)
+    a=$(lane_arch_of "${LANE}" 2>/dev/null || true)
+    if [[ -n "${b}" ]]; then OKCP_BOARD="${b}"; fi
+    if [[ -n "${a}" ]]; then OKCP_ARCH="${a}"; fi
+    export OKCP_BOARD OKCP_ARCH
 }
 
 lane_srcdir() { printf '%s\n' "${OKCP_WORKDIR}/src/${LANE}"; }

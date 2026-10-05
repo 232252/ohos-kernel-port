@@ -103,6 +103,7 @@ OpenHarmony 自己这边 6.6 的板子覆盖很窄：在 `OpenHarmony-7.0-Releas
 
 ## 文档
 
+* [docs/BOARDS.md](docs/BOARDS.md) — **哪个设备用哪个内核**，以及为什么通用内核不可用
 * [docs/VERSION-MATRIX.md](docs/VERSION-MATRIX.md) — 全部 lane 及其核实方式
 * [docs/PORTING-NOTES.md](docs/PORTING-NOTES.md) — ophub 与 OpenHarmony 的差异与坑
 * [docs/BOOT-IMAGE.md](docs/BOOT-IMAGE.md) — 启动镜像格式问题

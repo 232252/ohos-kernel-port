@@ -37,7 +37,10 @@ _lane_row() {
 lane_field() {
     local id=$1 field=$2 row
     row=$(_lane_row "${id}") || { log_error "unknown lane: ${id} (try: ohos-kb list-lanes)"; return 1; }
-    printf '%s\n' "${row}" | cut -f"${field}"
+    # A row may carry fewer columns than the matrix documents (the trailing
+    # board/arch columns are optional), so cut can fail.  An absent column is
+    # an empty value, not an error.
+    printf '%s\n' "${row}" | cut -f"${field}" 2>/dev/null || true
 }
 
 lane_exists()      { _lane_row "$1" >/dev/null 2>&1; }
@@ -49,6 +52,12 @@ lane_kver()        { lane_field "$1" 6; }
 lane_overlay()     { lane_field "$1" 7; }
 lane_status()      { lane_field "$1" 8; }
 lane_note()        { lane_field "$1" 9; }
+
+# The board layer and ARCH override.  A lane with an empty board builds a
+# generic kernel: usable for CI and for a board that has no OpenHarmony
+# configuration of its own, and for nothing else.
+lane_board()       { lane_field "$1" 10 2>/dev/null || true; }
+lane_arch_of()     { lane_field "$1" 11 2>/dev/null || true; }
 
 lane_url() {
     local id=$1 host

@@ -70,14 +70,33 @@ OKCP_BOARD="${OKCP_BOARD:-}"
 lane_arch() {
     local lane=$1
     if [[ -n "${OKCP_ARCH:-}" ]]; then printf '%s\n' "${OKCP_ARCH}"; return 0; fi
+    # A lane may pin the ARCH explicitly (the 32-bit hispark_taurus target).
+    local from_lane
+    from_lane=$(lane_arch_of "${lane}" 2>/dev/null || true)
+    if [[ -n "${from_lane}" ]]; then printf '%s\n' "${from_lane}"; return 0; fi
     case "$(lane_repo "${lane}")" in
         kernel_linux_4.19|kernel_linux) printf 'arm\n' ;;
         *) printf 'arm64\n' ;;
     esac
 }
+
+# The board layer, from the lane unless the caller pinned one.
+lane_board_layer() {
+    local lane=$1
+    # Non-empty wins, whether it came from --board or from set_lane's default.
+    # An explicitly empty --board means "generic", which is also what a lane
+    # with no board column says, so the two need no separate path.
+    if [[ -n "${OKCP_BOARD:-}" ]]; then printf '%s\n' "${OKCP_BOARD}"; return 0; fi
+    lane_board "${lane}" 2>/dev/null || true
+}
 config_arch() { lane_arch "$1"; }
 
 #------------------------------------------------------- config repo access
+# Clone (or reuse) the OpenHarmony configuration repository for a lane.
+#
+# OKCP_CONFIG_REPO_DIR points at an already-fetched checkout.  Cloning it once
+# and reusing it matters in practice: a lane matrix clones it per lane otherwise,
+# and it is also what makes the configuration path testable without a network.
 fetch_ohos_config_repo() {
     local lane=$1 dest=${2:-${OKCP_WORKDIR:-${OKCP_ROOT}/build}/config/${lane}}
     local branch url
@@ -85,6 +104,10 @@ fetch_ohos_config_repo() {
     [[ "${branch}" != "-" ]] || die "lane '${lane}' is not an OpenHarmony lane; it has no config-repo branch"
     url="${OKCP_OHOS_HOST}/${OKCP_CONFIG_REPO}.git"
 
+    if [[ -n "${OKCP_CONFIG_REPO_DIR:-}" && -d "${OKCP_CONFIG_REPO_DIR}" ]]; then
+        printf '%s\n' "${OKCP_CONFIG_REPO_DIR}"
+        return 0
+    fi
     if [[ -d "${dest}/.git" ]]; then printf '%s\n' "${dest}"; return 0; fi
     mkdir -p "$(dirname -- "${dest}")"
     log_step "fetching OpenHarmony config repo: ${OKCP_CONFIG_REPO}@${branch}"
@@ -193,11 +216,16 @@ _merge_fragments() {
 # pristinely rebuildable, and a second run does not inherit stale objects.
 generate_config() {
     local lane=$1 srcdir=$2 outdir=${3:-$(lane_outdir "${lane}")}
-    local out="${outdir}/.config" arch mode="fragment" base_desc=""
+    local out="${outdir}/.config" arch board mode="fragment" base_desc=""
     local -a frags=()
 
     require_file "${srcdir}/Makefile"
     arch=$(config_arch "${lane}")
+    # The board comes from the lane unless the caller pinned one.  This is what
+    # makes a build device-specific: without it the result is a generic kernel
+    # with no GPU, Wi-Fi or board pin-mux.
+    board=$(lane_board_layer "${lane}")
+    log_debug "lane ${lane}: arch=${arch} board=${board:-<none, generic build>}"
     mkdir -p "${outdir}"
 
     #-- layer 0: explicit override ---------------------------------------
@@ -237,20 +265,40 @@ generate_config() {
            || -f "${cfgroot}/linux-${series}/type/${OKCP_SYSTEM_TYPE}_defconfig" ]]; then
             base_def="${cfgroot}/linux-${series}/base_defconfig"
             type_def="${cfgroot}/linux-${series}/type/${OKCP_SYSTEM_TYPE}_defconfig"
-            if [[ -n "${OKCP_BOARD}" && -d "${cfgroot}/linux-${series}/${OKCP_BOARD}" ]]; then
-                board_def="${cfgroot}/linux-${series}/${OKCP_BOARD}/arch/${arch}_defconfig"
+            # Two layouts, and OpenHarmony uses both:
+                #   linux-<s>/<board>/arch/<arch>_defconfig     rk3568, imx8mm, ...
+                #   linux-<s>/arch/<arch>/configs/<board>_<type>_defconfig   the qemu targets
+            if [[ -n "${board}" && -d "${cfgroot}/linux-${series}/${board}" ]]; then
+                board_def="${cfgroot}/linux-${series}/${board}/arch/${arch}_defconfig"
+                [[ -f "${board_def}" ]] || board_def=""
+            fi
+            if [[ -z "${board_def}" && -n "${board}" ]]; then
+                # The names in this layout are not derivable from the board
+                # name — the qemu targets are qemu-arm-linux_standard_defconfig
+                # and qemu-arm64-linux_standard_defconfig — so match by glob
+                # rather than by constructing a name.
+                local dir="${cfgroot}/linux-${series}/arch/${arch}/configs" cand
+                if [[ -d "${dir}" ]]; then
+                    for cand in "${dir}/${board}"*_defconfig; do
+                        if [[ -f "${cand}" ]]; then board_def="${cand}"; break; fi
+                    done
+                    # an exact <board>_defconfig wins over a longer match
+                    if [[ -f "${dir}/${board}_defconfig" ]]; then
+                        board_def="${dir}/${board}_defconfig"
+                    fi
+                fi
             fi
         else
             local legacy="${cfgroot}/linux-${series}/arch/${arch}/configs"
             type_def="${legacy}/${OKCP_SYSTEM_TYPE}_common_defconfig"
-            if [[ -n "${OKCP_BOARD}" ]]; then
-                board_def="${legacy}/${OKCP_BOARD}_${OKCP_SYSTEM_TYPE}_defconfig"
+            if [[ -n "${board}" ]]; then
+                board_def="${legacy}/${board}_${OKCP_SYSTEM_TYPE}_defconfig"
             fi
         fi
 
         if [[ -n "${board_def}" && -f "${board_def}" ]] && config_is_full "${board_def}"; then
-            log_step "config: complete OpenHarmony board config for '${OKCP_BOARD}'"
-            base_desc="kernel_linux_config linux-${series}/${OKCP_BOARD} (complete)"
+            log_step "config: complete OpenHarmony board config for '${board}'"
+            base_desc="kernel_linux_config linux-${series} / ${board#"${cfgroot}"/linux-${series}/} (complete)"
             mode="full"; cp "${board_def}" "${out}"
         elif [[ -f "${base_def}" || -f "${type_def}" ]]; then
             log_step "config: OpenHarmony config repo (linux-${series}, type/${OKCP_SYSTEM_TYPE})"
