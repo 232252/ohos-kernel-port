@@ -50,6 +50,10 @@ on:
     paths-ignore:
       - "docs/**"
       - "**/*.md"
+  # One lane on a schedule, so the matrix stops being the only thing standing
+  # between the tree and a published artifact.
+  schedule:
+    - cron: "17 4 * * *"
   repository_dispatch:
     types: [ohos-kernel-build]
 
