@@ -126,10 +126,19 @@ build_kernel() {
     fi
 
     if ! ( cd "${srcdir}" && make "${args[@]}" Image ) > >(tee "${outdir}/build.log") 2>&1; then
-        log_error "kernel build FAILED. Last 40 lines of ${outdir}/build.log:"
-        tail -40 "${outdir}/build.log" >&2 || true
-        # A missing file is the common failure here, so collect them all rather
-        # than leaving the reader to grep.
+        # With -k the build keeps going, so the tail of the log is progress, not
+        # the cause.  Report the FIRST errors, which is where the reason is.
+        log_error "kernel build FAILED. First errors in ${outdir}/build.log:"
+        grep -nE "error:|fatal error:|No such file or directory|Error [0-9]+$" \
+            "${outdir}/build.log" 2>/dev/null | head -20 | sed 's/^/    /' >&2
+        local nerr
+        nerr=$(grep -cE "error:|fatal error:" "${outdir}/build.log" 2>/dev/null || echo 0)
+        log_error "  (${nerr} error line(s) in total; last 20 lines follow)"
+        tail -20 "${outdir}/build.log" >&2 || true
+        # Which target failed, and how far the build got: both are one glance
+        # here and a log download otherwise.
+        grep -oE "make(\[[0-9]+\])?: \*\*\* \[[^]]+\]: Error [0-9]+" \
+            "${outdir}/build.log" 2>/dev/null | sort -u | head -5 | sed 's/^/    /' >&2 || true
         if grep -q "No such file or directory" "${outdir}/build.log"; then
             log_error "--- every missing file this build reported ---"
             grep -oE "[^ :]+: (fatal error: [^:]+|No such file or directory)" "${outdir}/build.log" \

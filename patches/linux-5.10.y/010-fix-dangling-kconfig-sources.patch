@@ -1,18 +1,13 @@
-From ead3cafb2e434ed12ea2e1a182919a37c609dfe1 Mon Sep 17 00:00:00 2001
+From 161e3d877de60083d14bc1ace0a8cbd53463d972 Mon Sep 17 00:00:00 2001
 From: ohos-kernel-port contributors <232252@users.noreply.github.com>
-Date: Mon, 5 Oct 2026 08:30:18 +0800
+Date: Mon, 5 Oct 2026 09:39:10 +0800
 Subject: [PATCH] fs,security: make the Kconfig graph resolvable without
  dropping symbols
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
 SPDX-License-Identifier: GPL-2.0-only
 
 Baseline: gitcode.com/openharmony/kernel_linux_5.10
 Branch:   OpenHarmony-7.0-Release
-Commit:   (OpenHarmony-7.0-Release, as pinned by the 7.0 manifest)
-Found by: tools/audit-kconfig.py
 
 The 5.10 tree has the same five dangling Kconfig sources as the 6.6 tree:
 
@@ -23,19 +18,28 @@ The 5.10 tree has the same five dangling Kconfig sources as the 6.6 tree:
 
     $ make O=out ARCH=arm64 olddefconfig
     fs/Kconfig:119: can't open file "fs/code_sign/Kconfig"
-    make[3]: *** [scripts/kconfig/Makefile:77: olddefconfig] Error 1
 
-Unlike 6.6, the 5.10 tree does carry include/linux/xpm_types.h,
-include/linux/memcg_policy.h and include/linux/mm_purgeable.h, so this series
-is the whole of what the 5.10 lanes need — the four later patches exist only to
-supply headers that 5.10 already has.
+This also adds declaration-only Kconfig for memory_security and xpm and keeps
+their source lines, so olddefconfig does not silently drop CONFIG_SECURITY_XPM
+and flip the rest of the tree into its #else branches.
 
-The same two-part reasoning as the 6.6 fix applies: add declaration-only
-Kconfig for memory_security and xpm and keep their source lines, so olddefconfig
-does not silently drop CONFIG_SECURITY_XPM and flip the rest of the tree into
-its #else branches; remove the obj-/subdir- lines that name directories which
-do not exist; and remove only the three source lines whose files will never
-exist.
+Every build hook that would descend into an absent directory is removed, and in
+the 5.10 tree that is four lines, not three.  Besides the obj- entries there is
+
+    subdir-$(CONFIG_SECURITY_XPM)			+= xpm
+
+with no trailing slash.  kbuild follows a subdir- entry into a directory, so
+this one does not merely fail to build an object, it requires
+security/xpm/Makefile to exist:
+
+    /builder/src/ohos-7.0-5.10/security/xpm/Makefile: No such file or directory
+
+The 6.6 tree has no such line, which is why this only shows up here.
+
+Unlike 6.6, the 5.10 tree already carries include/linux/xpm_types.h,
+include/linux/memcg_policy.h, include/linux/mm_purgeable.h,
+include/linux/reclaim_acct.h and include/linux/zswapd.h, so this single patch
+is the whole of what the 5.10 lanes need.
 
 Upstream: no equivalent; none of these files are part of Linux v5.15.
 Licence: GPL-2.0-only, same as the tree.
@@ -44,9 +48,9 @@ Licence: GPL-2.0-only, same as the tree.
  fs/proc/Makefile                |  1 -
  fs/proc/memory_security/Kconfig |  8 ++++++++
  security/Kconfig                |  1 -
- security/Makefile               |  3 ---
- security/xpm/Kconfig            | 16 ++++++++++++++++
- 6 files changed, 24 insertions(+), 9 deletions(-)
+ security/Makefile               |  4 ----
+ security/xpm/Kconfig            | 20 ++++++++++++++++++++
+ 6 files changed, 28 insertions(+), 10 deletions(-)
  create mode 100644 fs/proc/memory_security/Kconfig
  create mode 100644 security/xpm/Kconfig
 
@@ -101,18 +105,19 @@ index 3f6bf76..43cd1c1 100644
  source "security/integrity/Kconfig"
  
 diff --git a/security/Makefile b/security/Makefile
-index 4042bbb..b34c1fb 100644
+index 4042bbb..3baf435 100644
 --- a/security/Makefile
 +++ b/security/Makefile
-@@ -14,7 +14,6 @@ subdir-$(CONFIG_SECURITY_SAFESETID)    += safesetid
+@@ -13,8 +13,6 @@ subdir-$(CONFIG_SECURITY_LOADPIN)	+= loadpin
+ subdir-$(CONFIG_SECURITY_SAFESETID)    += safesetid
  subdir-$(CONFIG_SECURITY_LOCKDOWN_LSM)	+= lockdown
  subdir-$(CONFIG_BPF_LSM)		+= bpf
- subdir-$(CONFIG_SECURITY_XPM)			+= xpm
+-subdir-$(CONFIG_SECURITY_XPM)			+= xpm
 -subdir-$(CONFIG_SECURITY_CONTAINER_ESCAPE_DETECTION) += container_escape_detection
  
  # always enable default capabilities
  obj-y					+= commoncap.o
-@@ -34,8 +33,6 @@ obj-$(CONFIG_SECURITY_SAFESETID)       += safesetid/
+@@ -34,8 +32,6 @@ obj-$(CONFIG_SECURITY_SAFESETID)       += safesetid/
  obj-$(CONFIG_SECURITY_LOCKDOWN_LSM)	+= lockdown/
  obj-$(CONFIG_CGROUPS)			+= device_cgroup.o
  obj-$(CONFIG_BPF_LSM)			+= bpf/
@@ -123,18 +128,22 @@ index 4042bbb..b34c1fb 100644
  subdir-$(CONFIG_INTEGRITY)		+= integrity
 diff --git a/security/xpm/Kconfig b/security/xpm/Kconfig
 new file mode 100644
-index 0000000..d93d87a
+index 0000000..6f8530c
 --- /dev/null
 +++ b/security/xpm/Kconfig
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,20 @@
 +# SPDX-License-Identifier: GPL-2.0-only
 +#
 +# Declared for configuration compatibility only.  kernel_linux_config sets
 +# CONFIG_SECURITY_XPM in its base_defconfig, but this tree ships no
 +# implementation of the xpm subsystem, so enabling the option builds nothing.
-+# The obj- line in security/Makefile has been removed for that reason.  The
-+# source line in security/Kconfig is deliberately kept: without it the symbol
-+# would be unknown, olddefconfig would silently drop it, and the
++# Every build hook that would descend into security/xpm/ is removed from
++# security/Makefile for that reason: both the obj- line and the subdir- line,
++# the latter because kbuild follows a subdir- entry into a directory and would
++# then require security/xpm/Makefile.
++#
++# The source line in security/Kconfig is deliberately kept: without it the
++# symbol would be unknown, olddefconfig would silently drop it, and the
 +# CONFIG_SECURITY_XPM blocks elsewhere in the tree would take their #else
 +# branches instead.
 +config SECURITY_XPM
