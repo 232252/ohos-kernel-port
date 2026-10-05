@@ -25,10 +25,10 @@ on:
   workflow_dispatch:
     inputs:
       lane:
-        description: "Lane to release (e.g. ohos-7.0-6.6)"
+        description: "Lane to release (e.g. ohos-7.0-5.10)"
         required: true
       tag:
-        description: "Release tag (e.g. v6.6.101-ohos7-r1)"
+        description: "Release tag; must start with the lane's kernel version (e.g. v5.10.210-ohos7-r1)"
         required: true
       prerelease:
         description: "Mark as a prerelease"
