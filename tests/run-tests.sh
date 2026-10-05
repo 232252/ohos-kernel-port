@@ -662,8 +662,14 @@ if [[ ${patch_count} -gt 0 ]] && have git; then
             KERNEL_REPO=kernel_linux_6.6
             NEEDS_HEADERS=1 ;;
     esac
-    for f in fs/Kconfig fs/proc/Makefile security/Makefile security/Kconfig \
-             include/linux/mm_types.h include/linux/page-flags.h; do
+    # Every file any patch in either series touches, so the whole chain can be
+    # applied here rather than only the first patch's files.
+    for f in fs/Kconfig fs/proc/Makefile security/Kconfig security/Makefile \
+             include/linux/mm_types.h include/linux/page-flags.h \
+             include/linux/dma-buf.h \
+             kernel/sched/rtg/rtg_ctrl.c \
+             drivers/accesstokenid/access_tokenid.c \
+             mm/zswapd_control.c; do
         if ! http_get \
             "https://api.gitcode.com/api/v5/repos/openharmony/${KERNEL_REPO}/contents/${f}?ref=OpenHarmony-7.0-Release" \
             "${repro}/blob.json" 2>/dev/null \
