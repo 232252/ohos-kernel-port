@@ -1,0 +1,132 @@
+From d9c09431fa6d45aa5cde9a4d0c9d870757758b01 Mon Sep 17 00:00:00 2001
+From: ohos-kernel-port contributors <232252@users.noreply.github.com>
+Date: Tue, 6 Oct 2026 11:52:43 +0800
+Subject: [PATCH] mm,trace: fix three internal inconsistencies the rk3568
+ configuration exposes
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+SPDX-License-Identifier: GPL-2.0-only
+
+Baseline: gitcode.com/openharmony/kernel_linux_6.6
+Branch:   OpenHarmony-7.0-Release
+Commit:   f4b61510491aa20f7f57fbbc5efc754083c92212
+
+Building lane ohos-7.0-6.6-rk3568 — that is, with OpenHarmony's own rk3568
+board configuration rather than a generic one — surfaces three errors.  All
+three are inconsistencies inside this tree, and all three are invisible until
+CONFIG_SECURITY_XPM is actually on.
+
+1. include/trace/events/mmflags.h lists the XPM page-flag tracepoints through
+   the wrong macro:
+
+     IF_HAVE_PG_ARCH_X(xpm_readonly)
+     IF_HAVE_PG_ARCH_X(xpm_writetainted)
+
+   IF_HAVE_PG_ARCH_X is guarded by CONFIG_ARCH_USES_PG_ARCH_X, which has
+   nothing to do with CONFIG_SECURITY_XPM, so its expansion references
+   PG_xpm_readonly from a context that does not guarantee the enum entry
+   exists:
+
+     include/trace/events/mmflags.h:105:43: error: 'PG_xpm_readonly'
+         undeclared here (not in a function)
+
+   The file already defines the right macro at line 75, guarded correctly:
+
+     #ifdef CONFIG_SECURITY_XPM
+     #define IF_HAVE_PG_XPM_INTEGRITY(_name) ,{1UL << PG_##_name, __stringify(_name)}
+     #else
+     #define IF_HAVE_PG_XPM_INTEGRITY(_name)
+     #endif
+
+   and the 5.10 tree uses that macro.  So the call sites are corrected to it.
+
+2. include/linux/mmzone.h guards NR_ZSPAGES with IS_ENABLED(CONFIG_ZSMALLOC),
+   but fs/proc/meminfo.c in this tree references NR_ZSPAGES unconditionally:
+
+     fs/proc/meminfo.c:195:67: error: 'NR_ZSPAGES' undeclared
+         (first use in this function)
+
+   The counter is now unconditional.  Whether zsmalloc is compiled is still
+   decided by its own config; only the enum slot is always present.
+
+3. include/linux/lowmem_dbg.h is missing, though mm/lowmem_dbg.c and
+   mm/lmkd_dbg_trigger.c include it unconditionally:
+
+     mm/lowmem_dbg.c:16:10: fatal error: linux/lowmem_dbg.h: No such file or directory
+
+   It is added from the 5.10 tree, whose version is a declaration and an
+   empty inline for the !CONFIG_LOWMEM case; nothing in it is 5.10-specific.
+
+Note the shape of this: with a generic configuration these three never
+compile.  They only appear once the board configuration turns on the OHOS
+features, which is the point of building per board.
+
+Upstream: no equivalent; the tracepoint and enum changes are OpenHarmony's own
+code being internally inconsistent.
+Licence: GPL-2.0-only, same as the tree.
+---
+ include/linux/lowmem_dbg.h     | 16 ++++++++++++++++
+ include/linux/mmzone.h         |  5 +++--
+ include/trace/events/mmflags.h |  4 ++--
+ 3 files changed, 21 insertions(+), 4 deletions(-)
+ create mode 100644 include/linux/lowmem_dbg.h
+
+diff --git a/include/linux/lowmem_dbg.h b/include/linux/lowmem_dbg.h
+new file mode 100644
+index 0000000..67b395d
+--- /dev/null
++++ b/include/linux/lowmem_dbg.h
+@@ -0,0 +1,16 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * include/linux/lowmem_dbg.h
++ *
++ * Copyright (c) 2020-2022 Huawei Technologies Co., Ltd.
++ */
++#ifndef __LMK_DBG_H
++#define __LMK_DBG_H
++
++#ifdef CONFIG_LOWMEM
++void lowmem_dbg(short oom_score_adj);
++#else
++static inline void lowmem_dbg(short oom_score_adj) {}
++#endif
++#endif
++
+diff --git a/include/linux/mmzone.h b/include/linux/mmzone.h
+index c40f72d..e9fe5aa 100644
+--- a/include/linux/mmzone.h
++++ b/include/linux/mmzone.h
+@@ -157,9 +157,10 @@ enum zone_stat_item {
+ 	NR_MLOCK,		/* mlock()ed pages found and moved off LRU */
+ 	/* Second 128 byte cacheline */
+ 	NR_BOUNCE,
+-#if IS_ENABLED(CONFIG_ZSMALLOC)
++	/* Unconditional: fs/proc/meminfo.c in this tree references NR_ZSPAGES
++	 * without a guard, so gating it on IS_ENABLED(CONFIG_ZSMALLOC) breaks
++	 * the build whenever zsmalloc is off. */
+ 	NR_ZSPAGES,		/* allocated in zsmalloc */
+-#endif
+ 	NR_FREE_CMA_PAGES,
+ #ifdef CONFIG_PAGE_TRACING
+ 	NR_SKB_PAGES,
+diff --git a/include/trace/events/mmflags.h b/include/trace/events/mmflags.h
+index 5078d1d..c97f93f 100644
+--- a/include/trace/events/mmflags.h
++++ b/include/trace/events/mmflags.h
+@@ -139,8 +139,8 @@ IF_HAVE_PG_IDLE(idle)							\
+ IF_HAVE_PG_IDLE(young)							\
+ IF_HAVE_PG_ARCH_X(arch_2)						\
+ IF_HAVE_PG_ARCH_X(arch_3)						\
+-IF_HAVE_PG_ARCH_X(xpm_readonly)						\
+-IF_HAVE_PG_ARCH_X(xpm_writetainted)
++IF_HAVE_PG_XPM_INTEGRITY(xpm_readonly)					\
++IF_HAVE_PG_XPM_INTEGRITY(xpm_writetainted)
+ 
+ #define show_page_flags(flags)						\
+ 	(flags) ? __print_flags(flags, "|",				\
+-- 
+2.39.5
+
